@@ -778,9 +778,13 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
         ytype = rr.charge_summary.get(cc, (None, ""))[1]
         charge_map.append((cc, code, ytype, amt, is_contract))
 
+    mkt_note = ("RR Market column \u2194 T12 GPR \u2014 both are seller-set ASKING rents and are "
+                "NOT a market-rent signal (either can be set at will). True market rent = latest "
+                "new-lease contract rents + HelloData executed asking; see the unit mix and Lease "
+                "Trend tabs. Shown here only as a data-integrity check that the two files describe "
+                "the same property/period.")
     lines = [
-        ReconLine("Gross Market Rent (asking), monthly", rr_market, rentinc,
-                  "RR Market Rent column \u2194 T12 GPR (Rentinc)"),
+        ReconLine("Gross Market Rent (asking), monthly", rr_market, rentinc, mkt_note),
         ReconLine("Contract Rent incl. amenity (occupied), monthly", rr_contract, econ_contract,
                   "RR contract (Rent+Amenity) \u2194 T12 contract net of vacancy (Rentinc+LtL+Vac+NonRev)"),
         ReconLine("T1 AGPR, annualized", rr_contract * 12, agpr_t1 * 12,
@@ -811,12 +815,11 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
             f"Contract rent (RR ${cl.rr_value:,.0f}) vs T12 occupied contract "
             f"(${cl.t12_value:,.0f}) differ by ${cl.variance:,.0f} "
             f"({cl.pct*100:+.1f}%) -- check vacant-unit treatment / amenity timing.")
-    # market rent should tie tightly
-    ml = lines[0]
-    if ml.t12_value and abs(ml.variance) / abs(ml.t12_value) > 0.01:
-        flags.append(
-            f"Market rent gap: RR ${ml.rr_value:,.0f} vs T12 ${ml.t12_value:,.0f} "
-            f"({ml.pct*100:+.1f}%).")
+    # NOTE: the RR-vs-T12 market-rent (asking) difference is intentionally NOT raised as a
+    # flag. Both sides are seller-set asking rents, not a market-rent signal — flagging the
+    # gap implies it is something to reconcile, which misdirects. The true market-rent reads
+    # live in the unit mix (new-lease + HelloData executed) and Lease Trend tabs; the
+    # informational note on the "Gross Market Rent (asking)" line above explains this.
     # RUBS / trash recovery charges with no clean T12 line
     for cc, code, ytype, amt, isc in charge_map:
         if re.search(r"valet|trash", cc, re.I) and code in ("RT", "cont"):

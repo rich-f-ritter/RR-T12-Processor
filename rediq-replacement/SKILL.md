@@ -122,10 +122,14 @@ re-roll automatically.
 
 ### 4. Check the reconciliation
 
-On `Reconciliation`, confirm Gross Market Rent and Contract Rent tie between the rent roll
-and the T12's latest month, review the **T1 AGPR** tie-out, and read the charge-code map —
-especially any RUBS/valet-trash recovery that could net against an expense or book as
-Other Income. Resolve the flags before underwriting.
+On `Reconciliation`, confirm **Contract Rent** ties between the rent roll and the T12's
+latest month and review the **T1 AGPR** tie-out — contract rent / AGPR is the number that
+"cannot be bullshitted," so that is the tie that matters. The **Gross Market Rent (asking)**
+line is informational only: both the RR Market column and the T12 GPR are seller-set asking
+rents, *not* a market-rent signal, so a gap there is expected and is **not** flagged — read
+true market rent from the unit mix (new-lease + HelloData executed) and Lease Trend tabs.
+Then read the charge-code map — especially any RUBS/valet-trash recovery that could net
+against an expense or book as Other Income. Resolve the flags before underwriting.
 
 ### 5. Hand off to the model
 
