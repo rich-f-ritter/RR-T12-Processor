@@ -60,13 +60,15 @@ def _formula_cells(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--t12", nargs="+",
-                    default=[str(TESTDATA / "Canyon_Ridge__T12_2026.03.xlsx")])
+                    default=[str(TESTDATA / "Canyon_Ridge__T12_2026.03.xlsx"),
+                             str(TESTDATA / "Canyon_Ridge__T12_2026.05.xlsx")])
     ap.add_argument("--rr",
                     default=str(TESTDATA / "Canyon_Ridge__Rent_Roll_2026.05.31.xlsx"))
-    ap.add_argument("--hd", default=None)
+    ap.add_argument("--hd",
+                    default=str(TESTDATA / "hellodata_unit_details_2026.06.17.csv"))
     ap.add_argument("--charge-codes", dest="charge_codes", default=None)
     ap.add_argument("--hd-fee-offset", dest="hd_fee_offset", default=None)
-    ap.add_argument("--name", default="Canyon Ridge")
+    ap.add_argument("--name", default="Canyon Ridge Apartments")
     ap.add_argument("--out", default=str(OUT / "Canyon_Ridge__Underwriting_Intake.xlsx"))
     ap.add_argument("--recalc", choices=["local", "office", "none"], default="local")
     ap.add_argument("--timeout", default="120")

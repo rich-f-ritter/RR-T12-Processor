@@ -101,6 +101,13 @@ def _family_from_section(section_hint):
     s = (section_hint or "").strip().lower()
     if not s:
         return None
+    # NON-OPERATING sections first: debt service, depreciation/amortization, and the
+    # partnership/owner/non-operating buckets. RedIQ excludes these from NOI, so they
+    # must land in the non-op codes (intex/prin/depex/icd/onoe), never operating G&A.
+    if re.search(r"debt service|financing", s):                                   return "nonop"
+    if re.search(r"depreciation|amortization", s):                                return "nonop"
+    if re.search(r"non.?operating|partnership|owner (expense|draw|distribution)|"
+                 r"owner['’]s", s):                                               return "nonop"
     if re.search(r"payroll|personnel|salaries|compensation|labor", s):           return "payroll"
     if re.search(r"advertis|marketing", s):                                       return "marketing"
     if re.search(r"general.*admin|administ|g\s*&\s*a|g/a|office", s):             return "admin"
@@ -180,7 +187,27 @@ def _split_rentadj(n):
     if re.search(r"concession|free rent|chargeback", n):                         return "conc"
     if re.search(r"loss to lease|gain to lease|loss/gain|gain/loss|market loss|market gain", n): return "ltl"
     if re.search(r"bad debt|collection|write.?off|uncollect|skip", n):           return "cl"
+    # Some operators dump non-operating / balance-sheet flows into a generic
+    # "Adjustments" grab-bag (distributions, owner contributions, loan & mortgage
+    # principal, interest, depreciation). Route those to the non-op codes so they
+    # don't masquerade as vacancy and distort EGR.
+    nop = _split_nonop(n, default=None)
+    if nop:                                                                       return nop
     return "vac"
+
+def _split_nonop(n, default="onoe"):
+    if re.search(r"interest", n):                                                return "intex"
+    if re.search(r"principal|amortiz", n):                                       return "prin"
+    if re.search(r"depreciat", n):                                               return "depex"
+    if re.search(r"distribution|owner draw", n):                                 return "icd"
+    if re.search(r"capital call|capital contribution|owner contribution|"
+                 r"partner contribution|equity contribution|^contributions?$", n): return "icd"
+    if re.search(r"loan (cost|fee)|financ.*fee|debt fee|origination", n):        return "othdf"
+    if re.search(r"loan draw|draw on loan", n):                                  return "draw"
+    if re.search(r"loan (repay|payoff)|repayment", n):                           return "repay"
+    if re.search(r"mortgage|note payable|loan payable|notes? payable", n):       return "onoe"
+    if re.search(r"reserve", n):                                                 return "rd"
+    return default
 
 def _split_rent(n):
     if re.search(r"loss to lease|gain to lease|loss/gain|gain/loss|loss to old lease|market loss|market gain", n): return "ltl"
@@ -228,6 +255,9 @@ EXPENSE_RULES = [
      r"hardware|lighting|key|lock|pool|spa|fountain|janitor|tools|building", "inter/exte"),
     (r"insurance", "ins"),
     (r"real estate tax|property tax|^tax|re tax|ad valorem", "ret"),
+    # non-operating items that sometimes appear without a clear section header
+    (r"\binterest\b", "intex"),
+    (r"depreciat|amortiz", "depex"),
     (r".*", "GA"),
 ]
 def _match(name, rules):
@@ -316,6 +346,7 @@ def categorize_t12_line(name, side, section_hint=None, acct_number=None):
     if fam == "rentadj":     return _split_rentadj(n)
     if fam == "rent":        return _split_rent(n)
     if fam == "writeoff":    return "cl"
+    if fam == "nonop":       return _split_nonop(n)
     # no recognized section -> pure keyword fallback by side
     return _match(name, REVENUE_RULES if side == "rev" else EXPENSE_RULES)
 

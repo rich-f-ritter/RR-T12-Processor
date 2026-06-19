@@ -20,17 +20,23 @@ the underwriting model. Deep submarket comp work belongs to
 
 ## Required inputs
 
-1. **One or more T12s / monthly operating statements** (.xlsx) — Yardi/RealPage/Entrata
-   native exports. Upload **as many periods as you have**: years of T12s, a couple of
-   overlapping T12s, or a string of monthly statements. They are **stitched into one
-   continuous monthly series** over the union of all their months (see *Stitching*).
-   Prefer the **most detailed** versions (separate GL lines for concessions,
+1. **One or more T12s / monthly operating statements** (.xlsx or binary .xls) —
+   Yardi/RealPage/Entrata native exports. Upload **as many periods as you have**: years of
+   T12s, a couple of overlapping T12s, or a string of monthly statements. They are
+   **stitched into one continuous monthly series** over the union of all their months (see
+   *Stitching*). Prefer the **most detailed** versions (separate GL lines for concessions,
    loss-to-lease, RUBS, payroll burden, insurance); a summary statement still reconciles
    at EGR/Opex/NOI but flattens those sub-codes to zero for the months it owns.
-2. **Rent roll** (.xlsx) — native export (Yardi/CBREI/RealPage/Entrata), as-of a recent
-   month. Use the **newest** if several are provided. Carries **move-in** and ideally
-   **lease start** dates (used to split new vs renewal — see *New vs renewal*); the parser
-   auto-detects the column layout (incl. two-row headers) and the unit-id format.
+   Full GL / trial-balance exports are fine too: **non-operating sections** (Debt Service /
+   interest & principal, Depreciation & Amortization, Partnership/Owner, and grab-bag
+   "Adjustments" carrying distributions, contributions, loan & mortgage balances) are routed
+   to the non-op codes so they stay **out of NOI** — never operating G&A or vacancy.
+2. **Rent roll** (.xlsx or binary .xls) — native export (Yardi/CBREI/RealPage/Entrata/
+   OneSite), as-of a recent month. Use the **newest** if several are provided. Carries
+   **move-in** and ideally **lease start** dates (used to split new vs renewal — see *New vs
+   renewal*); the parser auto-detects the column layout (two-row headers, and both
+   **charge-code sub-row** "block" rolls and **flat/wide** rolls where each charge is its own
+   column) and the unit-id format.
 3. **HelloData "Unit Details" CSV** *(optional)* — supplies clean bed/bath, the **T90
    executed** market-rent indicator per floor plan, and the monthly market-rent trend.
    It is joined to the rent roll **by unit number**, so HelloData's marketing floor-plan

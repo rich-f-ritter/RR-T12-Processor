@@ -26,6 +26,57 @@ import account_map as am
 
 
 # ===========================================================================
+# workbook loader — reads .xlsx natively and legacy binary .xls via xlrd, behind a
+# uniform (openpyxl-like) interface so every parser works regardless of file format.
+# Extension is not trusted (operators mislabel .xlsx as .XLS and vice versa): we try
+# openpyxl first and fall back to xlrd on failure.
+# ===========================================================================
+class _Cell:
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
+
+
+class _XlsSheet:
+    def __init__(self, sheet):
+        self._s = sheet
+        self.title = sheet.name
+        self.max_row = sheet.nrows
+        self.max_column = sheet.ncols
+
+    def cell(self, row, column):
+        r, c = row - 1, column - 1
+        if 0 <= r < self._s.nrows and 0 <= c < self._s.ncols:
+            v = self._s.cell_value(r, c)
+            return _Cell(None if v == "" else v)
+        return _Cell(None)
+
+    def iter_rows(self):
+        for r in range(1, self.max_row + 1):
+            yield [self.cell(r, c) for c in range(1, self.max_column + 1)]
+
+
+class _XlsBook:
+    def __init__(self, path):
+        import xlrd
+        self._b = xlrd.open_workbook(path)
+        self.worksheets = [_XlsSheet(self._b.sheet_by_index(i)) for i in range(self._b.nsheets)]
+        self.sheetnames = list(self._b.sheet_names())
+
+    def __getitem__(self, name):
+        return next(w for w in self.worksheets if w.title == name)
+
+
+def _load_workbook(path, data_only=True):
+    """Return a workbook (openpyxl for .xlsx, an xlrd-backed adapter for legacy .xls)."""
+    try:
+        return openpyxl.load_workbook(path, data_only=data_only)
+    except Exception:
+        return _XlsBook(path)
+
+
+# ===========================================================================
 # small helpers
 # ===========================================================================
 def _num(v):
@@ -141,7 +192,7 @@ _REV_SECTIONS = re.compile(
 
 
 def parse_t12(path: str) -> T12:
-    wb = openpyxl.load_workbook(path, data_only=True)
+    wb = _load_workbook(path)
     # pick the sheet that looks like an income statement (most numeric rows)
     ws = wb[wb.sheetnames[0]]
     best, best_score = ws, -1
@@ -351,7 +402,7 @@ def _occ_from_status(status: str) -> str:
 
 def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
     charge_lookup = charge_lookup or {}
-    wb = openpyxl.load_workbook(path, data_only=True)
+    wb = _load_workbook(path)
     # choose the sheet that actually holds the unit detail (most unit-id rows in col A)
     ws = max(wb.worksheets,
              key=lambda w: sum(1 for r in range(1, min(w.max_row, 500) + 1)
@@ -361,7 +412,7 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
     as_of = ""
     for r in range(1, 9):
         for c in range(1, 5):
-            m = re.search(r"as[ _]?of\s*[=:]\s*(.+)", _s(ws.cell(r, c).value), re.I)
+            m = re.search(r"as[ _]?of(?:\s+date)?\s*[=:]\s*(.+)", _s(ws.cell(r, c).value), re.I)
             if m:
                 as_of = m.group(1).strip(); break
         if as_of:
@@ -453,30 +504,29 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
             unit.charges[nm] = unit.charges.get(nm, 0.0) + sched
 
     data_start = hdr_row + (2 if two_row else 1)
-    units, cur_plan = [], ""
-    r = data_start
-    cur = None
-    while r < detail_end:
-        a = _s(ws.cell(r, c_unit).value)
-        if a.startswith("Unit Type:"):
-            cur_plan = a.split(":", 1)[1].strip()
-            r += 1
-            continue
-        # unit header row?  unit-id col matches a real unit id (digit after dash),
-        # is NOT a 'Total:' subtotal, and the SQFT cell is numeric
-        sqft_val = ws.cell(r, c_sqft).value if c_sqft else None
-        if _looks_like_unit(a) and isinstance(sqft_val, (int, float)):
-            if cur:
-                units.append(cur)
-            plan = cur_plan
-            if c_unittype:
-                v = _s(ws.cell(r, c_unittype).value)
-                if v:
-                    plan = v
-            cur = RRUnit(
+
+    # ---- FLAT / WIDE format (RealPage OneSite, etc.): ONE row per unit with charges
+    #      in COLUMNS rather than charge-code sub-rows. Detected by the absence of a
+    #      charge-code column. ----
+    if not c_charge:
+        core = {c_unit, c_unittype, c_sqft, c_status, c_res, c_movein, c_lstart,
+                c_lend, c_emo, c_market, c_ledger}
+        stop = re.compile(r"deposit|\bdep\b|on hand|balance|total|market|designation|status|"
+                          r"name|move|lease|resh|sqft|sq ?ft|floor|^unit|addl|^id\b|\bid$", re.I)
+        charge_cols = [(c, labels[c]) for c in sorted(labels)
+                       if c not in core and not stop.search(labels[c])]
+        units = []
+        for r in range(data_start, ws.max_row + 1):
+            a = _s(ws.cell(r, c_unit).value)
+            if not _looks_like_unit(a):
+                continue
+            sqv = ws.cell(r, c_sqft).value if c_sqft else None
+            if not (isinstance(sqv, (int, float)) or _s(ws.cell(r, c_status).value)):
+                continue
+            u = RRUnit(
                 unit=a,
-                floorplan=plan,
-                sqft=_num(sqft_val),
+                floorplan=_s(ws.cell(r, c_unittype).value) if c_unittype else "",
+                sqft=_num(sqv),
                 status=_s(ws.cell(r, c_status).value) if c_status else "",
                 resident=_s(ws.cell(r, c_res).value) if c_res else "",
                 market_rent=_num(ws.cell(r, c_market).value) if c_market else 0.0,
@@ -486,22 +536,57 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
                 lease_end=ws.cell(r, c_lend).value if c_lend else None,
                 expected_move_out=ws.cell(r, c_emo).value if c_emo else None,
             )
-            _add_charge(cur, r)              # the unit row can carry its first charge
+            for c, hdr in charge_cols:
+                amt = _num(ws.cell(r, c).value)
+                if amt:
+                    nm = _resolve_charge(hdr)
+                    u.charges[nm] = u.charges.get(nm, 0.0) + amt
+            units.append(u)
+    else:
+        # ---- BLOCK format (Yardi/CBREI): charge sub-rows beneath each unit row ----
+        units, cur_plan = [], ""
+        r = data_start
+        cur = None
+        while r < detail_end:
+            a = _s(ws.cell(r, c_unit).value)
+            if a.startswith("Unit Type:"):
+                cur_plan = a.split(":", 1)[1].strip()
+                r += 1
+                continue
+            sqft_val = ws.cell(r, c_sqft).value if c_sqft else None
+            if _looks_like_unit(a) and isinstance(sqft_val, (int, float)):
+                if cur:
+                    units.append(cur)
+                plan = cur_plan
+                if c_unittype:
+                    v = _s(ws.cell(r, c_unittype).value)
+                    if v:
+                        plan = v
+                cur = RRUnit(
+                    unit=a, floorplan=plan, sqft=_num(sqft_val),
+                    status=_s(ws.cell(r, c_status).value) if c_status else "",
+                    resident=_s(ws.cell(r, c_res).value) if c_res else "",
+                    market_rent=_num(ws.cell(r, c_market).value) if c_market else 0.0,
+                    charges={},
+                    move_in=ws.cell(r, c_movein).value if c_movein else None,
+                    lease_start=ws.cell(r, c_lstart).value if c_lstart else None,
+                    lease_end=ws.cell(r, c_lend).value if c_lend else None,
+                    expected_move_out=ws.cell(r, c_emo).value if c_emo else None,
+                )
+                _add_charge(cur, r)
+                r += 1
+                continue
+            ledger = _s(ws.cell(r, c_ledger).value) if c_ledger else ""
+            if (ledger.startswith("Charge Total")
+                    or _s(ws.cell(r, c_market).value).startswith("Charge Total")
+                    or (c_charge and _is_total(ws.cell(r, c_charge).value))):
+                r += 1
+                continue
+            if cur is not None and c_charge:
+                _add_charge(cur, r)
             r += 1
-            continue
-        # total / charge-total row -> skip
-        ledger = _s(ws.cell(r, c_ledger).value) if c_ledger else ""
-        if (ledger.startswith("Charge Total")
-                or _s(ws.cell(r, c_market).value).startswith("Charge Total")
-                or (c_charge and _is_total(ws.cell(r, c_charge).value))):
-            r += 1
-            continue
-        # otherwise a charge line for the current unit
-        if cur is not None and c_charge:
-            _add_charge(cur, r)
-        r += 1
-    if cur:
-        units.append(cur)
+        if cur:
+            units.append(cur)
 
     # --- derive per-unit economics from charges ---
     for u in units:
@@ -602,7 +687,7 @@ def parse_charge_codes(path: Optional[str]) -> dict:
     if not path:
         return {}
     try:
-        wb = openpyxl.load_workbook(path, data_only=True)
+        wb = _load_workbook(path)
     except Exception:
         return {}
     out = {}

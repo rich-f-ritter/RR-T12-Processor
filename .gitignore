@@ -10,6 +10,8 @@ dev/out/
 # (see dev/testdata/README.md). Flip these off only to commit fixtures for
 # cross-session reproducibility, and only if this repo is private.
 dev/testdata/*.xlsx
+dev/testdata/*.xls
+dev/testdata/*.XLS
 dev/testdata/*.csv
 dev/golden/*.xlsx
 dev/reference/*.xlsx
