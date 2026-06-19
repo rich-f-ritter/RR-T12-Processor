@@ -952,11 +952,12 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
 # ===========================================================================
 # DRIVER
 # ===========================================================================
-def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None):
+def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None, charge_codes_path=None):
     if isinstance(t12_paths, (str, bytes)):
         t12_paths = [t12_paths]
     st = il.stitch_statements(list(t12_paths))
-    rr = il.parse_rent_roll(rr_path)
+    charge_lookup = il.parse_charge_codes(charge_codes_path)
+    rr = il.parse_rent_roll(rr_path, charge_lookup)
     hd = il.parse_hellodata(hd_path) if hd_path else None
 
     # data vintage — prefer a precise date from the filename, else the in-file label
@@ -1019,10 +1020,13 @@ def main():
                     help="One or more T12 / monthly operating statements (stitched into one continuous series).")
     ap.add_argument("--rr", required=True, help="Rent roll (use the most recent).")
     ap.add_argument("--hd", default=None, help="HelloData unit-details CSV (optional).")
+    ap.add_argument("--charge-codes", default=None, dest="charge_codes",
+                    help="Optional charge-code lookup (Account/Name[/Type]) for rent rolls "
+                         "that bill by numeric code rather than name.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    out = build(a.t12, a.rr, a.hd, a.name, a.out)
+    out = build(a.t12, a.rr, a.hd, a.name, a.out, charge_codes_path=a.charge_codes)
     print(out)
 
 

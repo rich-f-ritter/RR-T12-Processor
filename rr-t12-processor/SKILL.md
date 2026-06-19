@@ -167,8 +167,12 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
 
 ## New vs renewal & true market rent
 
-- **New lease** = lease start on/before move-in; **renewal** = lease start **after**
-  move-in. Renewals are never market-tested, so only **new** leases inform market rent.
+- **New lease** = lease start **on/equal to** move-in (the first lease on the unit);
+  **renewal** = move-in is **older than** lease start (the resident moved in earlier and
+  re-signed). Renewals are never market-tested, so only **new** leases inform market rent.
+  If the rent roll carries only one of the two dates (e.g. lease start but no move-in, or
+  move-in but no lease start), new-vs-renewal can't be determined — those leases are left
+  **unknown** and excluded from the new-lease market-rent reads (lean on HelloData instead).
 - The **last 5 new-lease contract rents** per floor plan (in the Dashboard unit mix) and
   **HelloData executed** rents — **T90/T365 asking & effective**, plus **HD90 YoY** — are
   the preferred market-rent reads; cross-check them against each other. The T12 market-rent

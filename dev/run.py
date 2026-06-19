@@ -64,6 +64,7 @@ def main():
     ap.add_argument("--rr",
                     default=str(TESTDATA / "Canyon_Ridge__Rent_Roll_2026.05.31.xlsx"))
     ap.add_argument("--hd", default=None)
+    ap.add_argument("--charge-codes", dest="charge_codes", default=None)
     ap.add_argument("--name", default="Canyon Ridge")
     ap.add_argument("--out", default=str(OUT / "Canyon_Ridge__Underwriting_Intake.xlsx"))
     ap.add_argument("--recalc", choices=["local", "office", "none"], default="local")
@@ -77,6 +78,8 @@ def main():
              "--out", args.out]
     if args.hd:
         build += ["--hd", args.hd]
+    if args.charge_codes:
+        build += ["--charge-codes", args.charge_codes]
 
     print("→ build:", " ".join(build))
     r = subprocess.run(build)

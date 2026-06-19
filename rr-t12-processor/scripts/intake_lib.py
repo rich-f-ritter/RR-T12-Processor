@@ -51,8 +51,9 @@ def _s(v):
 
 
 def _is_glnum(s):
-    """True if a string looks like a bare GL account number (e.g. '4001', '6504')."""
-    return bool(re.fullmatch(r"\d{3,6}(?:\.\d+)?", _s(s)))
+    """True if a string looks like a GL account number — bare ('4001', '6504'),
+    segmented ('4020-5100'), or long ('40200500')."""
+    return bool(re.fullmatch(r"\d{3,8}(?:[-.]\d{1,6})*", _s(s)))
 
 
 def _is_date(v):
@@ -161,68 +162,97 @@ def parse_t12(path: str) -> T12:
     if hdr_row is None:
         hdr_row = 7  # sensible Yardi default
 
-    # --- month columns: contiguous run starting at col B ---
+    # --- month columns: the contiguous run of month-labelled header cells
+    #     (may start at col B, col C, ... — wherever the labels end) ---
+    def _ismonth(v):
+        return _is_date(v) or bool(re.match(r"^[A-Za-z]{3,9}[ \-]\d{4}$", _s(v)))
     months, month_cols = [], []
-    for c in range(2, ws.max_column + 1):
+    for c in range(1, ws.max_column + 1):
         v = ws.cell(hdr_row, c).value
-        lbl, key = _month_label(v)
-        if _is_date(v) or re.match(r"^[A-Za-z]{3,9}[ \-]\d{4}$", _s(v)):
-            months.append((lbl, key))
-            month_cols.append(c)
+        if _ismonth(v):
+            lbl, key = _month_label(v)
+            months.append((lbl, key)); month_cols.append(c)
         elif months:
             break  # run ended (next col is Total/blank)
-    # find the column-number for the GL account-number test (Yardi: col AA=27)
-    # we detect "the column whose header mentions 'Account'" else default 27
-    acct_col = 27
-    for c in range(ws.max_column, 16, -1):
-        h = _s(ws.cell(hdr_row, c).value).lower()
-        if "account" in h and "type" not in h:
-            acct_col = c
-            break
-    gltype_col = None
-    for c in range(16, ws.max_column + 1):
-        if "gl account type" in _s(ws.cell(hdr_row, c).value).lower():
-            gltype_col = c
-            break
+    if not month_cols:
+        return T12(months=[], rows=[], sheet_name=ws.title, title=title)
+
+    # --- detect the description column and the GL-account-number column.
+    #     Universal across layouts:
+    #       * description = the text column immediately LEFT of the month block
+    #         (where the line names always sit).
+    #       * GL number   = the column with the most DISTINCT "code-like" account
+    #         values (3–5 digit codes or dashed codes) — searched on the LEFT
+    #         first, else on the RIGHT. Distinctness + the code-like shape skip
+    #         constant property-id columns (e.g. '9521', '14108') and the
+    #         monetary amount / sign-flip helper columns. ---
+    first_month = month_cols[0]
+    nmonths = len(month_cols)
+    total_cols = {c for c in range(1, ws.max_column + 1)
+                  if _s(ws.cell(hdr_row, c).value).lower() in ("total", "ytd", "annual")}
+    left = list(range(1, first_month))
+    right = [c for c in range(first_month + nmonths, ws.max_column + 1) if c not in total_cols]
+    data_rows = [r for r in range(hdr_row + 1, ws.max_row + 1)
+                 if any(isinstance(ws.cell(r, c).value, (int, float)) for c in month_cols)]
+
+    def _codelike(s):
+        return _is_glnum(s) and ("-" in s or (s.isdigit() and 3 <= len(s) <= 5))
+
+    def _scan(cols):
+        gl, txt, tl = {}, {}, {}
+        for c in cols:
+            gs = set(); t = L = 0
+            for r in data_rows:
+                s = _s(ws.cell(r, c).value)
+                if not s:
+                    continue
+                if _codelike(s):
+                    gs.add(s)
+                if re.search(r"[A-Za-z]{2,}", s):
+                    t += 1; L += len(s)
+            gl[c], txt[c], tl[c] = len(gs), t, L
+        return gl, txt, tl
+
+    lgl, ltxt, ltl = _scan(left)
+    desc_col = max(left, key=lambda c: (ltxt[c], ltl[c])) if left else 1
+    gl_col = None
+    if left and max(lgl.values(), default=0) >= 2:
+        gl_col = max(left, key=lambda c: lgl[c])
+    elif right:
+        rgl, _, _ = _scan(right)
+        if max(rgl.values(), default=0) >= 2:
+            gl_col = max(right, key=lambda c: rgl[c])
+    if gl_col == desc_col:
+        gl_col = None
 
     rows, cur_section = [], ""
     for r in range(hdr_row + 1, ws.max_row + 1):
-        colA = _s(ws.cell(r, 1).value)
-        if not colA or colA == "None":
-            continue
-        other = _s(ws.cell(r, acct_col).value)
+        gl_raw = _s(ws.cell(r, gl_col).value) if gl_col else ""
+        gl = gl_raw if _is_glnum(gl_raw) else ""
+        name = _s(ws.cell(r, desc_col).value)
+        if not gl and not name and gl_raw:
+            name = gl_raw                 # section/subtotal label sitting in the gl column
         vals = [_num(ws.cell(r, c).value) for c in month_cols]
         has_vals = any(abs(v) > 1e-9 for v in vals)
+        if not gl and not name and not has_vals:
+            continue
 
-        # The line label and the GL account number live in two columns whose ORDER
-        # varies by export (some put the number in col A and the description in the
-        # account column; others reverse it). Normalize so `name` is always the
-        # human-readable description and `gl` is always the account number — this
-        # keeps categorization (keyword-driven, needs the description) and stitching
-        # (merges across statements by GL number) correct regardless of layout.
-        if _is_glnum(colA):
-            name, gl = other, colA
-        elif _is_glnum(other):
-            name, gl = colA, other
-        else:
-            name, gl = colA, ""
-        is_line = bool(gl) or (bool(other) and other.lower() != "none")
-        if not name:
-            name = colA
-
-        if not is_line:
-            # header (no values) vs subtotal (has values)
+        if not gl:
+            # no account number on the row -> section header (no values) or a
+            # subtotal/total line (has values). Header text drives `section`.
             if has_vals:
-                rows.append(T12Row("subtotal", name, cur_section, values=vals,
-                                   total=sum(vals)))
-            else:
+                rows.append(T12Row("subtotal", name or "", cur_section,
+                                   values=vals, total=sum(vals)))
+            elif name:
                 cur_section = name
                 rows.append(T12Row("header", name, cur_section))
             continue
 
         # real postable line
-        gltype = _s(ws.cell(r, gltype_col).value) if gltype_col else ""
-        if _REV_SECTIONS.search(cur_section) or gl.startswith("4") or gltype.startswith("4"):
+        if not name:
+            name = gl
+        digits = re.sub(r"\D", "", gl)
+        if _REV_SECTIONS.search(cur_section) or digits[:1] == "4":
             side = "rev"
         else:
             side = "exp"
@@ -282,61 +312,81 @@ def _occ_from_status(status: str) -> str:
     return "Occupied"
 
 
-def parse_rent_roll(path: str) -> RentRoll:
+def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
+    charge_lookup = charge_lookup or {}
     wb = openpyxl.load_workbook(path, data_only=True)
-    # choose the sheet with the most "Charge Total:" markers
-    ws, best = wb[wb.sheetnames[0]], -1
-    for sn in wb.sheetnames:
-        w = wb[sn]
-        cnt = sum(
-            1 for r in range(1, w.max_row + 1)
-            for c in range(8, min(w.max_column, 12) + 1)
-            if _s(w.cell(r, c).value).startswith("Charge Total")
-        )
-        if cnt > best:
-            ws, best = w, cnt
+    # choose the sheet that actually holds the unit detail (most unit-id rows in col A)
+    ws = max(wb.worksheets,
+             key=lambda w: sum(1 for r in range(1, min(w.max_row, 500) + 1)
+                               if _UNIT_RE.match(_s(w.cell(r, 1).value))))
 
-    as_of = _s(ws.cell(4, 1).value)
+    # as-of date: an 'As Of = ...' label in the first few rows, else fall back
+    as_of = ""
+    for r in range(1, 9):
+        for c in range(1, 5):
+            m = re.search(r"as[ _]?of\s*[=:]\s*(.+)", _s(ws.cell(r, c).value), re.I)
+            if m:
+                as_of = m.group(1).strip(); break
+        if as_of:
+            break
+    if not as_of:
+        as_of = _s(ws.cell(4, 1).value)
 
-    # --- find the FIRST detail header row ('Bldg-Unit' in col A) -> col layout ---
+    # --- locate the detail header row (allowing a two-row header) ---
+    def _hdr_score(r):
+        labs = [_s(ws.cell(r, c).value).lower() for c in range(1, min(ws.max_column, 24) + 1)]
+        has_unit = any(l == "unit" or l.startswith("bldg-unit") or l == "apt"
+                       or (l.startswith("unit") and "type" not in l and "sq" not in l)
+                       for l in labs[:4])
+        keys = sum(1 for l in labs if any(k in l for k in
+                   ("market", "charge", "amount", "move", "lease", "resident", "sq ft", "sqft")))
+        return has_unit, keys
     hdr_row = None
     for r in range(1, min(ws.max_row, 30) + 1):
-        if _s(ws.cell(r, 1).value).lower().startswith("bldg-unit"):
-            hdr_row = r
-            break
+        hu, keys = _hdr_score(r)
+        if hu and keys >= 2:
+            hdr_row = r; break
     if hdr_row is None:
         hdr_row = 7
 
-    # map header labels -> column indices for THIS layout
-    colmap = {}
+    # two-row header? the row below holds sub-labels (text, no unit id, no numbers)
+    nxt = hdr_row + 1
+    nxt_num = any(isinstance(ws.cell(nxt, c).value, (int, float)) for c in range(1, ws.max_column + 1))
+    nxt_unit = bool(_UNIT_RE.match(_s(ws.cell(nxt, 1).value)))
+    nxt_txt = sum(1 for c in range(1, ws.max_column + 1) if re.search(r"[A-Za-z]", _s(ws.cell(nxt, c).value)))
+    two_row = (not nxt_num) and (not nxt_unit) and nxt_txt >= 2
+
+    labels = {}
     for c in range(1, ws.max_column + 1):
-        lbl = _s(ws.cell(hdr_row, c).value).lower()
-        if lbl:
-            colmap[lbl] = c
+        a = _s(ws.cell(hdr_row, c).value)
+        b = _s(ws.cell(nxt, c).value) if two_row else ""
+        lab = (a + " " + b).strip().lower()
+        if lab:
+            labels[c] = lab
 
-    def col(*names, default=None):
+    def col(*names, exclude=()):
         for n in names:
-            for lbl, c in colmap.items():
-                if n in lbl:
+            for c, lab in labels.items():
+                if n in lab and not any(x in lab for x in exclude):
                     return c
-        return default
+        return None
 
-    c_sqft   = col("sqft", "sq ft", "square")
-    c_status = col("unit status", "status")
-    c_res    = col("resident", "tenant")
-    c_movein = col("move-in", "move in")
-    c_lstart = col("lease start")
-    c_lend   = col("lease end", "lease expiration")
-    c_emo    = col("expected move-out", "expected move out")
-    c_market = col("market rent")
-    c_ledger = col("ledger")
-    c_charge = col("charge code")
-    c_sched  = col("scheduled charge", "scheduled")
-    c_actual = col("actual charge", "actual")
-    # Floor plan can live EITHER in a "Unit Type" column (inline, one per unit row)
-    # OR in "Unit Type: XX" section-header rows above each block. Detect the column
-    # form here; if absent, cur_plan (set from the header rows) is used instead.
-    c_unittype = col("unit type")
+    c_unit     = (col("bldg-unit", "unit number", "unit no")
+                  or col("unit", exclude=("type", "sq", "status")) or 1)
+    c_unittype = col("unit type", "floor plan", "floorplan", "plan type", "plan")
+    c_sqft     = col("sq ft", "sqft", "square")
+    c_status   = col("unit status", "lease status", "status")
+    c_res      = col("resident name", "tenant name", "name", "resident", "tenant",
+                     exclude=("unit", "floor"))
+    c_movein   = col("move-in", "move in")
+    c_lstart   = col("lease start", "lease from", "lease begin")
+    c_lend     = col("lease end", "lease expiration", "lease to", "expiration")
+    c_emo      = col("expected move-out", "expected move out", "move-out", "move out")
+    c_market   = col("market rent", "market")
+    c_ledger   = col("ledger")
+    c_charge   = col("charge code", "charge")
+    c_sched    = col("scheduled charge", "scheduled", "amount", "charge amt")
+    c_actual   = col("actual charge", "actual")
 
     # --- boundary: detail ends at the first post-detail summary section ---
     detail_end = ws.max_row + 1
@@ -348,16 +398,34 @@ def parse_rent_roll(path: str) -> RentRoll:
             detail_end = r
             break
 
+    def _resolve_charge(raw):
+        """Map a raw charge-code cell to a human name via the optional lookup
+        (numeric operator codes -> name); descriptive codes pass through."""
+        raw = _s(raw)
+        return charge_lookup[raw][0] if raw in charge_lookup else raw
+
+    def _is_total(s):
+        s = _s(s).lower()
+        return s in ("total", "charge total:") or s.startswith("charge total")
+
+    def _add_charge(unit, r):
+        cc = _s(ws.cell(r, c_charge).value) if c_charge else ""
+        if cc and not _is_total(cc) and not cc.endswith("Total:"):
+            sched = _num(ws.cell(r, c_sched).value) if c_sched else 0.0
+            nm = _resolve_charge(cc)
+            unit.charges[nm] = unit.charges.get(nm, 0.0) + sched
+
+    data_start = hdr_row + (2 if two_row else 1)
     units, cur_plan = [], ""
-    r = hdr_row + 1
+    r = data_start
     cur = None
     while r < detail_end:
-        a = _s(ws.cell(r, 1).value)
+        a = _s(ws.cell(r, c_unit).value)
         if a.startswith("Unit Type:"):
             cur_plan = a.split(":", 1)[1].strip()
             r += 1
             continue
-        # unit header row?  col A matches a real unit id (digit after dash),
+        # unit header row?  unit-id col matches a real unit id (digit after dash),
         # is NOT a 'Total:' subtotal, and the SQFT cell is numeric
         sqft_val = ws.cell(r, c_sqft).value if c_sqft else None
         if _UNIT_RE.match(a) and not a.endswith("Total:") and isinstance(sqft_val, (int, float)):
@@ -381,24 +449,19 @@ def parse_rent_roll(path: str) -> RentRoll:
                 lease_end=ws.cell(r, c_lend).value if c_lend else None,
                 expected_move_out=ws.cell(r, c_emo).value if c_emo else None,
             )
-            # the unit header row can ALSO carry its first charge (Yardi does this)
-            cc = _s(ws.cell(r, c_charge).value) if c_charge else ""
-            if cc:
-                sched = _num(ws.cell(r, c_sched).value) if c_sched else 0.0
-                cur.charges[cc] = cur.charges.get(cc, 0.0) + sched
+            _add_charge(cur, r)              # the unit row can carry its first charge
             r += 1
             continue
-        # charge-total row -> close unit
+        # total / charge-total row -> skip
         ledger = _s(ws.cell(r, c_ledger).value) if c_ledger else ""
-        if ledger.startswith("Charge Total") or _s(ws.cell(r, c_market).value).startswith("Charge Total"):
+        if (ledger.startswith("Charge Total")
+                or _s(ws.cell(r, c_market).value).startswith("Charge Total")
+                or (c_charge and _is_total(ws.cell(r, c_charge).value))):
             r += 1
             continue
         # otherwise a charge line for the current unit
         if cur is not None and c_charge:
-            cc = _s(ws.cell(r, c_charge).value)
-            if cc and not cc.endswith("Total:"):
-                sched = _num(ws.cell(r, c_sched).value) if c_sched else 0.0
-                cur.charges[cc] = cur.charges.get(cc, 0.0) + sched
+            _add_charge(cur, r)
         r += 1
     if cur:
         units.append(cur)
@@ -418,7 +481,12 @@ def parse_rent_roll(path: str) -> RentRoll:
         u.other_income = other
         u.concessions = conc
         u.net_effective = contract + conc   # conc is negative
-        u.occupancy = _occ_from_status(u.status)
+        if u.status:
+            u.occupancy = _occ_from_status(u.status)
+        else:
+            # no status column on this rent roll -> infer from economics:
+            # a unit carrying no contract (base) rent is treated as vacant.
+            u.occupancy = "Occupied" if contract > 0 else "Vacant"
         u.lease_type = "Market"
 
     # --- footer summaries (best-effort; used for validation) ---
@@ -484,6 +552,51 @@ def _parse_rr_footer(ws) -> tuple:
                 footer_mix[a] = (_num(ws.cell(r, 2).value), _num(ws.cell(r, 3).value),
                                  _num(ws.cell(r, 4).value), _num(ws.cell(r, 5).value))
     return charge_summary, status_summary, footer_mix, totals
+
+
+# ===========================================================================
+# CHARGE-CODE LOOKUP  (decode rent rolls that bill by numeric operator code)
+# ===========================================================================
+def parse_charge_codes(path: Optional[str]) -> dict:
+    """Optional lookup: operator charge/account code -> (name, type). Some rent rolls
+    (e.g. CBREI/Yardi) list each charge by a numeric code rather than a name; this maps
+    them so categorization works. Accepts any sheet with a header row exposing an
+    account/code column and a name column (+ optional type)."""
+    if not path:
+        return {}
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True)
+    except Exception:
+        return {}
+    out = {}
+    for ws in wb.worksheets:
+        hdr = None
+        for r in range(1, min(ws.max_row, 15) + 1):
+            labs = [_s(ws.cell(r, c).value).lower() for c in range(1, min(ws.max_column, 12) + 1)]
+            if (any(l in ("name", "description", "charge name") for l in labs)
+                    and any(("account" in l or l == "code" or "charge code" in l) for l in labs)):
+                hdr = r; break
+        if hdr is None:
+            continue
+        labels = {c: _s(ws.cell(hdr, c).value).lower() for c in range(1, ws.max_column + 1)}
+
+        def find(*names, exact=False):
+            for n in names:
+                for c, l in labels.items():
+                    if (l == n) if exact else (n in l):
+                        return c
+            return None
+        c_code = find("account", "code", exact=True) or find("charge code", "account", "code")
+        c_name = find("name", "description", exact=True) or find("name", "description")
+        c_type = find("type")
+        if not c_code or not c_name:
+            continue
+        for r in range(hdr + 1, ws.max_row + 1):
+            code = _s(ws.cell(r, c_code).value)
+            name = _s(ws.cell(r, c_name).value)
+            if code and name:
+                out[code] = (name, _s(ws.cell(r, c_type).value) if c_type else "")
+    return out
 
 
 # ===========================================================================
