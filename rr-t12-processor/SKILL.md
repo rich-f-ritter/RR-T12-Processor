@@ -106,7 +106,7 @@ underwriting actually trusts; renewals are excluded.
 python3 <skill_dir>/scripts/build_intake.py \
   --t12 "<statement1.xlsx>" ["<statement2.xlsx>" ...] \
   --rr  "<RentRoll.xlsx>" \
-  [--hd "<hello.csv>"] [--charge-codes "<lease_charge_codes.xlsx>"] [--name "Property Name"] \
+  [--hd "<hello.csv>"] [--charge-codes "<lease_charge_codes.xlsx>"] [--hd-fee-offset <$/mo>] [--name "Property Name"] \
   --out /home/claude/<Property>__Underwriting_Intake.xlsx
 ```
 
@@ -177,9 +177,21 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
 - **New lease** = lease start **on/equal to** move-in (the first lease on the unit);
   **renewal** = move-in is **older than** lease start (the resident moved in earlier and
   re-signed). Renewals are never market-tested, so only **new** leases inform market rent.
-  If the rent roll carries only one of the two dates (e.g. lease start but no move-in, or
-  move-in but no lease start), new-vs-renewal can't be determined — those leases are left
-  **unknown** and excluded from the new-lease market-rent reads (lean on HelloData instead).
+  When the rent roll carries **move-in but no lease start**, a move-in within **~12 months**
+  of the as-of date is treated as a **new** lease (still on its original lease); an older
+  move-in implies a **likely renewal** and is excluded from the new-lease reads. With only a
+  lease-start (no move-in), or neither, the lease is left **unknown**.
+- **HelloData ↔ rent roll join + bundled-fee netting.** HelloData is matched to the rent
+  roll **by unit number**, so HD's marketing floor-plan names (e.g. *Barnsley*, *Phoenix*)
+  resolve to the rent roll's internal plan codes; the website names are shown on the unit
+  mix. HelloData scrapes the website **"Total Monthly"** price, which can fold **mandatory
+  flat fees** (valet trash, pest, utility-billing admin, tech) into the asking number —
+  inflating it vs base/contract rent. The skill **auto-detects** that bundle from the rent
+  roll (flat fees billed on ≥80% of units) and shows HD **net** of it *only when* HD's raw
+  asking sits ~a bundle above the new-lease base rent (evidence the site bundles). Use
+  **`--hd-fee-offset <$/mo>`** to set the exact website bundle when the rent roll doesn't
+  itemize all of it (e.g. Artessa: rent roll shows valet trash $35 + pest $3 = $38, while
+  the site's $4.88 utility-billing admin lifts the true bundle to **$42.88**).
 - The **last 5 new-lease contract rents** per floor plan (in the Dashboard unit mix) and
   **HelloData executed** rents — **T90/T365 asking & effective**, plus **HD90 YoY** — are
   the preferred market-rent reads; cross-check them against each other. The T12 market-rent
