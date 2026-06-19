@@ -6,6 +6,9 @@ __pycache__/
 # Generated workbooks
 dev/out/
 
+# Packaged skill artifact (regenerated from rr-t12-processor/ on each ship)
+rr-t12-processor.zip
+
 # Real property financials + large reference binaries — kept LOCAL by default
 # (see dev/testdata/README.md). Flip these off only to commit fixtures for
 # cross-session reproducibility, and only if this repo is private.
