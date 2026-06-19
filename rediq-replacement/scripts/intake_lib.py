@@ -1225,23 +1225,20 @@ def unified_lines(st: Stitched):
 # ===========================================================================
 @dataclass
 class LeaseTrend:
-    plan_t90: dict                  # base_plan -> {'ask','eff','n'}  (trailing 90d)
+    months: list                    # [(y,m), ...] sorted — full HelloData + new-lease history
+    hd_ask: dict                    # (y,m) -> mix-weighted executed asking rent / unit
+    hd_eff: dict                    # (y,m) -> mix-weighted executed effective rent / unit
+    hd_conc: dict                   # (y,m) -> HelloData concession % (1 - eff/ask)
+    hd_n: dict                      # (y,m) -> executed (off-market) lease count
+    new_rent: dict                  # (y,m) -> avg NEW-lease contract rent (rent roll, by start month)
+    new_n: dict                     # (y,m) -> new-lease count
     recent_new: dict                # plan -> [RRUnit] (last 5 new leases)
-    quarters: list                  # ['2024 Q3', ...] chronological
-    hd_ask_by_q: list               # mix-weighted asking rent by quarter
-    hd_eff_by_q: list               # mix-weighted effective rent by quarter
-    hd_n_by_q: list                 # executed-lease count by quarter
-    new_rent_by_q: list             # avg NEW-lease contract rent (rent roll) by start quarter
-    new_n_by_q: list
+    plan_t90: dict                  # base_plan -> {'ask','eff','n'}  (trailing 90d)
     notes: list
 
 
 def _quarter(d):
     return (d.year, (d.month - 1) // 3 + 1)
-
-
-def _qlabel(q):
-    return f"{q[0]} Q{q[1]}"
 
 
 def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
@@ -1252,15 +1249,16 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
         bp = _base_plan(u.floorplan)
         weights[bp] = weights.get(bp, 0) + 1
 
-    quarters, hd_pq, new_pq = set(), {}, {}
+    months = set()
+    hd_pm = {}                       # (y,m,bp) -> {'ask':[],'eff':[]}
     if hd:
         for r in hd.rows:
             od = _to_date(r.get("Off Market Date"))
             if not od:
                 continue
-            q = _quarter(od); quarters.add(q)
+            ym = (od.year, od.month); months.add(ym)
             bp = _base_plan(r.get("Floorplan", ""))
-            cell = hd_pq.setdefault((q, bp), {"ask": [], "eff": []})
+            cell = hd_pm.setdefault((ym, bp), {"ask": [], "eff": []})
             for fld, key in (("Last Asking Rent", "ask"), ("Last Effective Rent", "eff")):
                 try:
                     v = float(r.get(fld) or 0)
@@ -1268,61 +1266,60 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
                         cell[key].append(v)
                 except (ValueError, TypeError):
                     pass
+    hd_ask, hd_eff, hd_conc, hd_n = {}, {}, {}, {}
+    for ym in months:
+        na = da = ne = de = 0.0; cnt = 0
+        for bp, w in weights.items():
+            cell = hd_pm.get((ym, bp))
+            if not cell:
+                continue
+            if cell["ask"]:
+                na += (sum(cell["ask"]) / len(cell["ask"])) * w; da += w
+            if cell["eff"]:
+                ne += (sum(cell["eff"]) / len(cell["eff"])) * w; de += w; cnt += len(cell["eff"])
+        a = na / da if da else 0.0
+        e = ne / de if de else 0.0
+        hd_ask[ym], hd_eff[ym] = a, e
+        hd_conc[ym] = (1 - e / a) if (a > 0 and e > 0) else 0.0
+        hd_n[ym] = cnt
+
+    new_pm = {}
     for u in rr.units:
         if classify_lease(u) != "new":
             continue
         d = _to_date(u.lease_start)
         if not d or u.contract_rent <= 0:
             continue
-        q = _quarter(d); quarters.add(q)
-        new_pq.setdefault(q, []).append(u.contract_rent)
+        ym = (d.year, d.month); months.add(ym)
+        new_pm.setdefault(ym, []).append(u.contract_rent)
+    new_rent = {ym: sum(v) / len(v) for ym, v in new_pm.items()}
+    new_n = {ym: len(v) for ym, v in new_pm.items()}
 
-    quarters = sorted(quarters)
-    hd_ask_by_q, hd_eff_by_q, hd_n_by_q = [], [], []
-    for q in quarters:
-        num_a = den_a = num_e = den_e = 0.0
-        n = 0
-        for bp, w in weights.items():
-            cell = hd_pq.get((q, bp))
-            if not cell:
-                continue
-            if cell["ask"]:
-                num_a += (sum(cell["ask"]) / len(cell["ask"])) * w; den_a += w
-            if cell["eff"]:
-                num_e += (sum(cell["eff"]) / len(cell["eff"])) * w; den_e += w
-                n += len(cell["eff"])
-        hd_ask_by_q.append(num_a / den_a if den_a else 0.0)
-        hd_eff_by_q.append(num_e / den_e if den_e else 0.0)
-        hd_n_by_q.append(n)
-    new_rent_by_q = [(sum(new_pq[q]) / len(new_pq[q])) if new_pq.get(q) else 0.0 for q in quarters]
-    new_n_by_q = [len(new_pq.get(q, [])) for q in quarters]
-    notes = _seasonality_notes(quarters, hd_ask_by_q, hd_n_by_q)
-    return LeaseTrend(t90, recent, [_qlabel(q) for q in quarters], hd_ask_by_q,
-                      hd_eff_by_q, hd_n_by_q, new_rent_by_q, new_n_by_q, notes)
+    months = sorted(months)
+    notes = _trend_notes(months, hd_ask, hd_n)
+    return LeaseTrend(months, hd_ask, hd_eff, hd_conc, hd_n, new_rent, new_n,
+                      recent, t90, notes)
 
 
-def _seasonality_notes(quarters, ask, n):
+def _trend_notes(months, hd_ask, hd_n):
+    import calendar
     notes = []
-    byq = {}
-    for q, a, c in zip(quarters, ask, n):
-        if a > 0 and c > 0:
-            byq.setdefault(q[1], []).append(a)
-    if len(byq) >= 2 and sum(len(v) for v in byq.values()) >= 4:
-        avg = {qq: sum(v) / len(v) for qq, v in byq.items()}
+    bym = {}
+    for ym in months:
+        if hd_ask.get(ym, 0) > 0 and hd_n.get(ym, 0) > 0:
+            bym.setdefault(ym[1], []).append(hd_ask[ym])
+    if len(bym) >= 6:
+        avg = {m: sum(v) / len(v) for m, v in bym.items()}
         hi, lo = max(avg, key=avg.get), min(avg, key=avg.get)
         spread = (avg[hi] / avg[lo] - 1) * 100 if avg[lo] else 0
         if spread > 2:
-            qn = {1: "Q1 (winter)", 2: "Q2 (spring)", 3: "Q3 (summer)", 4: "Q4 (fall)"}
             notes.append(
-                f"Seasonality: executed asking rents run highest in {qn[hi]} and lowest "
-                f"in {qn[lo]} (~{spread:.0f}% spread across the HelloData history) — weight "
-                f"lease-up turns toward peak season.")
-    qd = dict(zip(quarters, ask))
-    pairs = [(q, (a / qd[(q[0] - 1, q[1])] - 1) * 100)
-             for q, a in zip(quarters, ask)
-             if a > 0 and qd.get((q[0] - 1, q[1]), 0) > 0]
+                f"Seasonality: executed asking rents peak in {calendar.month_abbr[hi]} and "
+                f"trough in {calendar.month_abbr[lo]} (~{spread:.0f}% spread across the HelloData history).")
+    pairs = [(hd_ask[ym] / hd_ask[(ym[0] - 1, ym[1])] - 1) * 100
+             for ym in months
+             if hd_ask.get(ym, 0) > 0 and hd_ask.get((ym[0] - 1, ym[1]), 0) > 0]
     if pairs:
-        avgyoy = sum(p for _, p in pairs) / len(pairs)
-        notes.append(f"HelloData asking-rent YoY (same quarter): {avgyoy:+.1f}% average "
-                     f"across {len(pairs)} quarter-pair(s).")
+        notes.append(f"HelloData asking-rent YoY (same calendar month): {sum(pairs) / len(pairs):+.1f}% "
+                     f"average across {len(pairs)} month-pair(s).")
     return notes

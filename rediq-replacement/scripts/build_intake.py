@@ -467,43 +467,121 @@ def write_unit_mix_block(ws, mix, has_hd, r0, c0):
 # ===========================================================================
 # TAB: Lease Trend  (market-rent trajectory + seasonality + new-lease detail)
 # ===========================================================================
-def write_lease_trend(ws, lt, rr: il.RentRoll, has_hd=True):
-    _title_block(ws, "Lease Trend & Seasonality",
-                 "True-market-rent movement from executed leases — HelloData (mix-weighted by floor "
-                 "plan) and new-lease signings. Renewals are excluded (never market-tested).")
+def write_lease_trend(ws, lt, st, tr, rr: il.RentRoll, has_hd=True):
+    _title_block(ws, "Lease Trend & Operating History (monthly)",
+                 "True market rent from HelloData executed leases (mix-weighted by floor plan) + "
+                 "new-lease signings; loss-to-lease backed into from T12 AGPR; concessions compared "
+                 "T12 vs HelloData. Months flow left-to-right; renewals excluded from market reads.")
+    units = max(1, len(rr.units))
+    axis = sorted(set(lt.months) | set(st.monthkeys))
+
+    finmap, finidx = {}, {ym: i for i, ym in enumerate(st.monthkeys)}
+    for ym, i in finidx.items():
+        gpr = st.code_total("Rentinc", i); ltl = st.code_total("ltl", i)
+        vac = st.code_total("vac", i); conc = st.code_total("conc", i)
+        finmap[ym] = {"i": i, "gpr": gpr, "ltl": ltl, "vac": vac, "conc": conc, "agpr": gpr + ltl}
+
     r = 4
-    # seasonality notes
-    if lt.notes:
-        _set(ws, r, 1, "Observations", font=_f(bold=True, color=NAVY))
-        r += 1
-        for note in lt.notes:
-            _set(ws, r, 1, "\u2022  " + note, font=_f(color="843C0C"), wrap=True)
-            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
-            ws.row_dimensions[r].height = 30
-            r += 1
+
+    def month_header(r):
+        _set(ws, r, 1, "Month →", font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL))
+        for j, ym in enumerate(axis):
+            _set(ws, r, 2 + j, _dt.date(ym[0], ym[1], 1).strftime("%b %Y"),
+                 font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center")
+        return r + 1
+
+    def section(r, label):
+        _set(ws, r, 1, label, font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
+        for j in range(len(axis)):
+            ws.cell(r, 2 + j).fill = _fill(SECT_FILL)
+        return r + 1
+
+    def mrow(r, label, fn, fmt, bold=False):
+        _set(ws, r, 1, label, font=_f(bold=bold, color=(NAVY if bold else BLACK)))
+        for j, ym in enumerate(axis):
+            v = fn(ym)
+            if v is not None and v != "":
+                _set(ws, r, 2 + j, v, fmt=fmt, align="right")
+        return r + 1
+
+    r = month_header(r)
+    r = section(r, "MARKET RENT — HelloData executed (mix-weighted) + new-lease signings")
+    r = mrow(r, "HD Market Rent / unit (asking)", lambda ym: round(lt.hd_ask.get(ym, 0)) or None, MONEY, bold=True)
+    r = mrow(r, "HD Effective Rent / unit", lambda ym: round(lt.hd_eff.get(ym, 0)) or None, MONEY)
+    r = mrow(r, "HD Concession % (1 − eff/ask)", lambda ym: lt.hd_conc.get(ym) or None, PCT)
+    r = mrow(r, "HD Executed Leases (#)", lambda ym: lt.hd_n.get(ym) or None, "0")
+    r = mrow(r, "New-Lease Contract / unit (rent roll)", lambda ym: round(lt.new_rent.get(ym, 0)) or None, MONEY, bold=True)
+    r = mrow(r, "New Leases (#)", lambda ym: lt.new_n.get(ym) or None, "0")
+
+    r += 1
+    r = section(r, "OCCUPANCY & RENT POSITION — from financial statements")
+    r = mrow(r, "Econ. Occupancy % (T12: 1 + vac/GPR)",
+             lambda ym: (lambda f: (1 + f["vac"] / f["gpr"]) if f and f["gpr"] else None)(finmap.get(ym)), PCT)
+    r = mrow(r, "Contract Rent / unit — AGPR (T12)",
+             lambda ym: (lambda f: round(f["agpr"] / units) if f else None)(finmap.get(ym)), MONEY, bold=True)
+    r = mrow(r, "Market Rent / unit — GPR basis (T12, ref only)",
+             lambda ym: (lambda f: round(f["gpr"] / units) if f else None)(finmap.get(ym)), MONEY)
+
+    def ltl_u(ym):
+        a = lt.hd_ask.get(ym, 0); f = finmap.get(ym)
+        return round(a - f["agpr"] / units) if (a > 0 and f) else None
+
+    def ltl_pct(ym):
+        a = lt.hd_ask.get(ym, 0); f = finmap.get(ym)
+        return ((a - f["agpr"] / units) / a) if (a > 0 and f) else None
+
+    r = mrow(r, "Loss-to-Lease / unit (HD mkt − AGPR)", ltl_u, MONEY, bold=True)
+    r = mrow(r, "Loss-to-Lease % (vs HD market)", ltl_pct, PCT)
+
+    r += 1
+    r = section(r, "CONCESSIONS — T12 (portfolio) vs HelloData (new-lease)")
+    r = mrow(r, "T12 Concessions ($/mo)", lambda ym: (lambda f: round(f["conc"]) if (f and f["conc"]) else None)(finmap.get(ym)), MONEY)
+    r = mrow(r, "T12 Concessions % of AGPR",
+             lambda ym: (lambda f: (-f["conc"] / f["agpr"]) if (f and f["agpr"]) else None)(finmap.get(ym)), PCT, bold=True)
+    r = mrow(r, "HD Concession % (new-lease)", lambda ym: lt.hd_conc.get(ym) or None, PCT, bold=True)
+
+    r += 1
+    r = section(r, "OPERATING TREND — from stitched T12")
+    r = mrow(r, "Effective Gross Revenue", lambda ym: (lambda f: round(tr.egr_by_month[f["i"]]) if f else None)(finmap.get(ym)), MONEY)
+    r = mrow(r, "Operating Expenses", lambda ym: (lambda f: round(tr.opex_by_month[f["i"]]) if f else None)(finmap.get(ym)), MONEY)
+    r = mrow(r, "Net Operating Income", lambda ym: (lambda f: round(tr.noi_by_month[f["i"]]) if f else None)(finmap.get(ym)), MONEY, bold=True)
+
+    r += 1
+    r = section(r, "TRAILING ANNUALIZATIONS")
+    for c, h in enumerate(["T12", "T6", "T3"]):
+        _set(ws, r, 2 + c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center")
+    r += 1
+    for lbl, key in [("EGR (annualized)", "_EGR"), ("Operating Expenses", "_OPEX"), ("NOI", "_NOI")]:
+        _set(ws, r, 1, lbl, font=_f(bold=(key == "_NOI")))
+        for c, p in enumerate(["T12", "T6", "T3"]):
+            v = tr.periods.get(p, {}).get(key)
+            if v is not None:
+                _set(ws, r, 2 + c, round(v), fmt=MONEY, align="right")
         r += 1
 
-    # quarterly market-rent matrix
-    _set(ws, r, 1, "Market Rent by Quarter (executed)", font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
-    for c in range(2, 8):
-        ws.cell(r, c).fill = _fill(SECT_FILL)
     r += 1
-    cols = ["Quarter", "HD Asking\n(mix-wtd)", "HD Effective\n(mix-wtd)", "Concession\n%",
-            "HD Exec\n(n)", "New-Lease Rent\n(rent roll)", "New Leases\n(n)"]
-    for c, h in enumerate(cols, 1):
-        _set(ws, r, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center", wrap=True)
-    r += 1
-    for i, q in enumerate(lt.quarters):
-        zeb = _fill(ZEBRA) if i % 2 == 0 else None
-        _set(ws, r, 1, q, font=_f(bold=True), align="center", fill=zeb)
-        _set(ws, r, 2, round(lt.hd_ask_by_q[i]) or None, fmt=MONEY, align="right", fill=zeb)
-        _set(ws, r, 3, round(lt.hd_eff_by_q[i]) or None, fmt=MONEY, align="right", fill=zeb)
-        _set(ws, r, 4, f'=IF(OR(B{r}="",B{r}=0),"-",1-C{r}/B{r})', fmt=PCT, align="right", fill=zeb)
-        _set(ws, r, 5, lt.hd_n_by_q[i] or None, fmt="0", align="center", fill=zeb)
-        _set(ws, r, 6, round(lt.new_rent_by_q[i]) or None, fmt=MONEY, align="right", fill=zeb)
-        _set(ws, r, 7, lt.new_n_by_q[i] or None, fmt="0", align="center", fill=zeb)
+    notes = list(lt.notes)
+    ov = [ym for ym in axis if ym in finmap]
+    t12c = [(-finmap[ym]["conc"] / finmap[ym]["agpr"]) for ym in ov if finmap[ym]["agpr"]]
+    hdc = [lt.hd_conc[ym] for ym in ov if lt.hd_conc.get(ym, 0) > 0]
+    avg_t12c = (sum(t12c) / len(t12c) * 100) if t12c else 0
+    avg_hdc = (sum(hdc) / len(hdc) * 100) if hdc else 0
+    notes.append(
+        "Concessions read differently by source: the T12 books concessions across the WHOLE portfolio "
+        "(~%.1f%% of AGPR here), while HelloData's concession is per NEW lease (~%.1f%% here). Because only "
+        "a fraction of units turn each year, a ~10%% new-lease concession typically shows up nearer ~5%% on "
+        "the financials. " % (avg_t12c, avg_hdc)
+        + ("NOTE: HelloData effective tracks asking for this property (specials text not captured), so the "
+           "T12 concession line is the more reliable concession signal here." if avg_hdc < 1 else ""))
+    if notes:
+        _set(ws, r, 1, "Observations", font=_f(bold=True, color=NAVY))
         r += 1
-    r += 1
+        for note in notes:
+            _set(ws, r, 1, "•  " + note, font=_f(color="843C0C"), wrap=True)
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=min(2 + len(axis), 13))
+            ws.row_dimensions[r].height = 42
+            r += 1
+    r += 2
 
     # T90 by base plan
     if has_hd and lt.plan_t90:
@@ -546,9 +624,10 @@ def write_lease_trend(ws, lt, rr: il.RentRoll, has_hd=True):
             _set(ws, r, 5, psf, fmt=MONEY2, align="right")
             r += 1
 
-    widths = [13, 11, 13, 14, 13, 12, 12]
-    for c, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(c)].width = w
+    ws.column_dimensions["A"].width = 38           # metric labels / plan names
+    for c in range(2, 30):                          # monthly columns (and sub-table cols)
+        ws.column_dimensions[get_column_letter(c)].width = 9.5
+    ws.freeze_panes = "B5"
     ws.sheet_view.showGridLines = False
 
 
@@ -924,7 +1003,6 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None):
     ws_lt = wb.create_sheet("Lease Trend")
     ws_hd = wb.create_sheet("HelloData") if hd else None
     ws_rec = wb.create_sheet("Reconciliation")
-    ws_tr = wb.create_sheet("Trends")
     ws_codes = wb.create_sheet("Codes")
 
     codes_last = write_codes(ws_codes)
@@ -937,11 +1015,10 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None):
     write_os_grid(ws_os, st, prop_name, last12,
                   title="Operating Statement — Standardized (live rollup)", subtitle=sub)
     write_rent_roll(ws_rr, rr, hd)
-    write_lease_trend(ws_lt, lt, rr, has_hd=bool(hd))
+    write_lease_trend(ws_lt, lt, st, tr, rr, has_hd=bool(hd))
     if ws_hd is not None:
         write_hellodata(ws_hd, hd)
     write_reconciliation(ws_rec, rec, rr)
-    write_trends(ws_tr, tr)
     write_dashboard(ws_dash, prop_name, st, rr, mix, rec, tr, lt, has_hd=bool(hd),
                     rr_asof=rr_asof, stmt_asof=stmt_asof)
 
