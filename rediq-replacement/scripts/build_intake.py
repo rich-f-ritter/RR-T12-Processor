@@ -97,10 +97,11 @@ def _t12_patterns(st):
     notes = []
     if n < 3:
         return notes
-    g0, g1 = st.code_total("Rentinc", 0), st.code_total("Rentinc", n - 1)
+    a0 = st.code_total("Rentinc", 0) + st.code_total("ltl", 0)
+    a1 = st.code_total("Rentinc", n - 1) + st.code_total("ltl", n - 1)
     v0, v1 = st.code_total("vac", 0), st.code_total("vac", n - 1)
-    if g0 and g1:
-        occ0, occ1 = 1 + v0 / g0, 1 + v1 / g1
+    if a0 and a1:
+        occ0, occ1 = 1 + v0 / a0, 1 + v1 / a1
         if occ1 - occ0 > 0.10:
             notes.append(f"Lease-up: economic occupancy ramped from {occ0*100:.0f}% "
                          f"({st.month_labels[0]}) to {occ1*100:.0f}% ({st.month_labels[-1]}) — "
@@ -563,8 +564,8 @@ def write_lease_trend(ws, lt, st, tr, rr: il.RentRoll, has_hd=True):
 
     r += 1
     r = section(r, "OCCUPANCY & RENT POSITION — from financial statements")
-    r = mrow(r, "Econ. Occupancy % (T12: 1 + vac/GPR)",
-             lambda ym: (lambda f: (1 + f["vac"] / f["gpr"]) if f and f["gpr"] else None)(finmap.get(ym)), PCT)
+    r = mrow(r, "Physical Occupancy % (T12: 1 − vac/AGPR)",
+             lambda ym: (lambda f: (1 + f["vac"] / f["agpr"]) if f and f["agpr"] else None)(finmap.get(ym)), PCT)
     r = mrow(r, "Contract Rent / unit — AGPR (T12)",
              lambda ym: (lambda f: round(f["agpr"] / units) if f else None)(finmap.get(ym)), MONEY, bold=True)
     r = mrow(r, "Market Rent / unit — GPR basis (T12, ref only)",
@@ -614,13 +615,16 @@ def write_lease_trend(ws, lt, st, tr, rr: il.RentRoll, has_hd=True):
     hdc = [lt.hd_conc[ym] for ym in ov if lt.hd_conc.get(ym, 0) > 0]
     avg_t12c = (sum(t12c) / len(t12c) * 100) if t12c else 0
     avg_hdc = (sum(hdc) / len(hdc) * 100) if hdc else 0
+    new_share = sum(1 for u in rr.units if il.classify_lease(u) == "new") / units * 100
     notes.append(
-        "Concessions read differently by source: the T12 books concessions across the WHOLE portfolio "
-        "(~%.1f%% of AGPR here), while HelloData's concession is per NEW lease (~%.1f%% here). Because only "
-        "a fraction of units turn each year, a ~10%% new-lease concession typically shows up nearer ~5%% on "
-        "the financials. " % (avg_t12c, avg_hdc)
-        + ("NOTE: HelloData effective tracks asking for this property (specials text not captured), so the "
-           "T12 concession line is the more reliable concession signal here." if avg_hdc < 1 else ""))
+        f"Concessions by source: the T12 books concessions across the WHOLE portfolio "
+        f"(~{avg_t12c:.1f}% of AGPR here), while HelloData's is per NEW lease (~{avg_hdc:.1f}% here). "
+        f"The portfolio figure ≈ new-lease concession × the share of units on a recently-signed lease — "
+        f"here ~{new_share:.0f}% of in-place leases are new (lease-up), so the two run close (little "
+        f"dilution). On a stabilized deal with ~40–50% annual turnover, expect the T12 figure nearer half "
+        f"the new-lease rate. "
+        + ("NOTE: HelloData effective tracks asking in the most recent months (specials text not captured), "
+           "so the T12 concession line is the more reliable recent concession signal." if avg_hdc < 1 else ""))
     if notes:
         _set(ws, r, 1, "Observations", font=_f(bold=True, color=NAVY))
         r += 1

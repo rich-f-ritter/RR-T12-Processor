@@ -1283,7 +1283,7 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
         hd_conc[ym] = (1 - e / a) if (a > 0 and e > 0) else 0.0
         hd_n[ym] = cnt
 
-    new_pm = {}
+    new_pm, new_cnt = {}, {}          # (ym,bp) -> [contract rents] ; ym -> count
     for u in rr.units:
         if classify_lease(u) != "new":
             continue
@@ -1291,9 +1291,17 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
         if not d or u.contract_rent <= 0:
             continue
         ym = (d.year, d.month); months.add(ym)
-        new_pm.setdefault(ym, []).append(u.contract_rent)
-    new_rent = {ym: sum(v) / len(v) for ym, v in new_pm.items()}
-    new_n = {ym: len(v) for ym, v in new_pm.items()}
+        new_pm.setdefault((ym, _base_plan(u.floorplan)), []).append(u.contract_rent)
+        new_cnt[ym] = new_cnt.get(ym, 0) + 1
+    new_rent, new_n = {}, {}
+    for ym in {k[0] for k in new_pm}:
+        num = den = 0.0                # mix-weight by floor-plan unit count (like the HD rows)
+        for bp, w in weights.items():
+            lst = new_pm.get((ym, bp))
+            if lst:
+                num += (sum(lst) / len(lst)) * w; den += w
+        new_rent[ym] = num / den if den else 0.0
+        new_n[ym] = new_cnt.get(ym, 0)
 
     months = sorted(months)
     notes = _trend_notes(months, hd_ask, hd_n)
