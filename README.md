@@ -20,8 +20,10 @@ rediq-replacement/          ← the shippable skill (this is what gets packaged)
   scripts/                  ← account_map.py, intake_lib.py, build_intake.py
 dev/                        ← local dev harness (NOT part of the shipped skill)
   run.py                    ← build + recalc in one command
+  recalc_local.py           ← deterministic, LibreOffice-free formula evaluator
   compare.py                ← regression: fresh build vs golden, cell-by-cell
   testdata/                 ← input fixtures (git-ignored; real financials)
+  reference/                ← RedIQ outputs + TMG model (git-ignored; context)
   golden/                   ← known-good output to diff against (git-ignored)
   out/                      ← generated workbooks (git-ignored)
 ```
@@ -29,16 +31,29 @@ dev/                        ← local dev harness (NOT part of the shipped skill
 ## Dev loop
 
 ```bash
-# build the intake workbook from the Canyon Ridge fixtures + run the mandatory recalc
+# build the intake workbook from the Canyon Ridge fixtures + recalc
 python3 dev/run.py
 
 # check the result against the golden workbook (exits non-zero on drift)
-python3 dev/compare.py
+python3 dev/compare.py        # -> ✓ PARITY
 ```
 
-`dev/run.py` resolves the recalc script from `$RECALC_PY`, else
-`/mnt/skills/public/xlsx/scripts/recalc.py` (present in the Claude app runtime and
-this environment). Pass your own inputs with `--t12 a.xlsx b.xlsx --rr rr.xlsx [--hd hello.csv]`.
+Pass your own inputs with `--t12 a.xlsx b.xlsx --rr rr.xlsx [--hd hello.csv]`.
+
+### Recalc note
+
+The skill's mandatory recalc step (`/mnt/skills/public/xlsx/scripts/recalc.py`,
+LibreOffice) is what runs in the **Claude app** and is the production path. In this
+**sandbox** that LibreOffice path is unreliable — the recalc macro hangs and the
+script reports success off an unmodified file — so the dev harness defaults to
+`recalc_local.py`, a small Python evaluator covering the exact formula vocabulary
+the skill emits (`SUM`, `SUMIFS`, `VLOOKUP`, `IFERROR`, `IF`, `OR`, arithmetic). It
+reproduces the golden's LibreOffice-computed values exactly (~21k cells, <1s).
+
+- `python3 dev/run.py --recalc local`  (default) — Python evaluation, works anywhere
+- `python3 dev/run.py --recalc office` — the shipped LibreOffice path (flaky here)
+- `dev/compare.py` evaluates the fresh workbook via `recalc_local` and diffs it
+  against the golden's cached values.
 
 ## Packaging for the Claude app
 

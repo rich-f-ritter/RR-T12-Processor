@@ -4,23 +4,35 @@ These are **real property financials** and are **git-ignored by default** (see
 repo `.gitignore`) so they are not pushed to GitHub. The container is ephemeral,
 so they must be re-supplied each session unless you choose to commit them.
 
-The dev harness (`dev/run.py`, `dev/compare.py`) expects:
+## `dev/testdata/` — inputs to the build
 
 | File | Role |
 |------|------|
 | `Canyon_Ridge__T12_2026.03.xlsx` | T12 operating statement (Apr 2025 – Mar 2026) |
+| `Canyon_Ridge__T12_2026.05.xlsx` | T12 operating statement (Jun 2025 – May 2026) |
 | `Canyon_Ridge__Rent_Roll_2026.05.13.xlsx` | rent roll, as-of 05/13 |
 | `Canyon_Ridge__Rent_Roll_2026.05.31.xlsx` | rent roll, as-of 05/31 (newest) |
+| `hellodata_unit_details_2026.06.17.csv` | HelloData "Unit Details" export |
 
-The golden output in `../golden/` was built from a **larger** input set than the
-above and currently CANNOT be reproduced bit-for-bit from these fixtures alone:
+With the full set, the harness reproduces the golden output to full value parity:
 
-- a **second T12** covering through **May 2026** (`...T12_2026.05.xlsx`) — needed
-  for the 14-month stitch the golden shows; and
-- a **HelloData "Unit Details" CSV** — needed for the `HelloData` tab and the
-  T90/T365 market-rent reads.
+```
+python3 dev/run.py \
+  --t12 dev/testdata/Canyon_Ridge__T12_2026.03.xlsx dev/testdata/Canyon_Ridge__T12_2026.05.xlsx \
+  --rr  dev/testdata/Canyon_Ridge__Rent_Roll_2026.05.31.xlsx \
+  --hd  dev/testdata/hellodata_unit_details_2026.06.17.csv \
+  --name "Canyon Ridge Apartments"
+python3 dev/compare.py        # -> ✓ PARITY
+```
 
-Drop those two files in here to enable full-parity regression against the golden.
+## `dev/reference/` — context, not inputs
 
-To commit fixtures for cross-session reproducibility, remove the matching lines
-from `.gitignore` (only if this repo is private and the data may be stored there).
+The RedIQ outputs we are replacing (operating statement + rent roll) and the
+destination `TMG_Acquisition_Model` live here for reference. They are NOT consumed
+by the build; they are the gold standard for categorization and the paste target.
+
+## Committing fixtures
+
+Everything here is git-ignored. To commit fixtures for cross-session
+reproducibility, remove the matching lines from the repo `.gitignore` — only if
+this repo is private and storing the financials there is acceptable.

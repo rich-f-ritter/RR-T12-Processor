@@ -128,7 +128,7 @@ def write_t12_categorized(ws, st, code_list_rows: int):
             r += 1
             continue
         _set(ws, r, 1, item["code"], font=_f(bold=True, color=BLUE), align="center")
-        _set(ws, r, 2, f'=IFERROR(VLOOKUP($A{r},Codes!$A:$B,2,FALSE),"")', font=_f(color=GREEN))
+        _set(ws, r, 2, f'=IFERROR(VLOOKUP($A{r},Codes!$A:$B,2,FALSE()),"")', font=_f(color=GREEN))
         _set(ws, r, 3, item["name"], font=_f(color=BLACK))
         for k, v in enumerate(item["values"]):
             if v is not None:

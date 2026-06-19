@@ -6,15 +6,17 @@ Builds the intake workbook from the Canyon Ridge fixtures (or any files you
 pass through), then runs the mandatory recalc step exactly as the skill spec
 requires. This is the local dev loop; the shipped skill is unchanged.
 
-Usage:
-    python3 dev/run.py                      # default Canyon Ridge fixtures
-    python3 dev/run.py --rr <rentroll.xlsx> --t12 <a.xlsx> <b.xlsx> ...
-    python3 dev/run.py --no-recalc          # build only (skip recalc)
+Recalc modes (--recalc):
+    local   (default) deterministic Python evaluation via recalc_local — works
+            everywhere, reports formula/error counts, leaves formulas intact.
+    office  the shipped pipeline's recalc.py (LibreOffice). This is what runs in
+            the Claude app; it is unreliable in this sandbox (the macro hangs).
+    none    build only.
 
-Recalc resolution order:
-    1. $RECALC_PY if set
-    2. /mnt/skills/public/xlsx/scripts/recalc.py   (Claude app / this env)
-    3. error with instructions
+Usage:
+    python3 dev/run.py
+    python3 dev/run.py --recalc office
+    python3 dev/run.py --rr <rentroll.xlsx> --t12 <a.xlsx> <b.xlsx> ... --hd <h.csv>
 """
 import argparse, os, subprocess, sys
 from pathlib import Path
@@ -23,16 +25,36 @@ ROOT = Path(__file__).resolve().parent.parent
 SKILL = ROOT / "rediq-replacement"
 TESTDATA = ROOT / "dev" / "testdata"
 OUT = ROOT / "dev" / "out"
+sys.path.insert(0, str(ROOT / "dev"))
 
 
-def find_recalc():
+def find_office_recalc():
     env = os.environ.get("RECALC_PY")
     if env and Path(env).exists():
         return env
     canonical = "/mnt/skills/public/xlsx/scripts/recalc.py"
-    if Path(canonical).exists():
-        return canonical
-    return None
+    return canonical if Path(canonical).exists() else None
+
+
+def local_recalc(path):
+    import recalc_local as rl
+    vals = rl.compute_values(path)
+    errs = [f"{s}!{c}" for (s, c), v in vals.items() if v == "#ERR"]
+    formulas = sum(1 for _ in _formula_cells(path))
+    print(f"  local recalc: {formulas} formulas, {len(errs)} error(s)"
+          + (f" -> {errs[:10]}" if errs else ""))
+    return len(errs)
+
+
+def _formula_cells(path):
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=False)
+    for sn in wb.sheetnames:
+        ws = wb[sn]
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    yield cell
 
 
 def main():
@@ -44,7 +66,7 @@ def main():
     ap.add_argument("--hd", default=None)
     ap.add_argument("--name", default="Canyon Ridge")
     ap.add_argument("--out", default=str(OUT / "Canyon_Ridge__Underwriting_Intake.xlsx"))
-    ap.add_argument("--no-recalc", action="store_true")
+    ap.add_argument("--recalc", choices=["local", "office", "none"], default="local")
     ap.add_argument("--timeout", default="120")
     args = ap.parse_args()
 
@@ -61,17 +83,21 @@ def main():
     if r.returncode != 0:
         sys.exit(r.returncode)
 
-    if args.no_recalc:
+    if args.recalc == "none":
         print("✓ built (recalc skipped):", args.out)
         return
 
-    recalc = find_recalc()
-    if not recalc:
-        print("✗ recalc.py not found. Set $RECALC_PY or run in an environment "
-              "with /mnt/skills/public/xlsx/scripts/recalc.py.", file=sys.stderr)
-        sys.exit(2)
+    if args.recalc == "local":
+        n_err = local_recalc(args.out)
+        print("✓ built + locally recalced:", args.out)
+        sys.exit(1 if n_err else 0)
 
-    print("→ recalc:", recalc, args.out, args.timeout)
+    recalc = find_office_recalc()
+    if not recalc:
+        print("✗ recalc.py not found. Set $RECALC_PY or run where "
+              "/mnt/skills/public/xlsx/scripts/recalc.py exists.", file=sys.stderr)
+        sys.exit(2)
+    print("→ office recalc:", recalc, args.out, args.timeout)
     r = subprocess.run([sys.executable, recalc, args.out, args.timeout])
     sys.exit(r.returncode)
 
