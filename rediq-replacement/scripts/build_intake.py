@@ -91,6 +91,27 @@ def _title_block(ws, title, subtitle=""):
 # ===========================================================================
 # TAB: T12 Categorized  (full T12, editable code column, Total per row)
 # ===========================================================================
+def _t12_patterns(st):
+    """A few auto-detected trend observations for the T12 Categorized notes block."""
+    n = st.n_months
+    notes = []
+    if n < 3:
+        return notes
+    g0, g1 = st.code_total("Rentinc", 0), st.code_total("Rentinc", n - 1)
+    v0, v1 = st.code_total("vac", 0), st.code_total("vac", n - 1)
+    if g0 and g1:
+        occ0, occ1 = 1 + v0 / g0, 1 + v1 / g1
+        if occ1 - occ0 > 0.10:
+            notes.append(f"Lease-up: economic occupancy ramped from {occ0*100:.0f}% "
+                         f"({st.month_labels[0]}) to {occ1*100:.0f}% ({st.month_labels[-1]}) — "
+                         f"early-period revenue reflects fill, not run-rate; trust T3 over T12.")
+    ltl0, ltl1 = st.code_total("ltl", 0), st.code_total("ltl", n - 1)
+    if abs(ltl0) > 1 and abs(ltl1 - ltl0) > abs(ltl0) * 0.5:
+        notes.append(f"Loss-to-Lease moved from ${ltl0:,.0f} ({st.month_labels[0]}) to "
+                     f"${ltl1:,.0f} ({st.month_labels[-1]}) as contract rents reset toward market.")
+    return notes
+
+
 def write_t12_categorized(ws, st, code_list_rows: int):
     """One clean chart of accounts across the full union of months. Every line appears
     once (merged across statements); each month's value comes from the freshest statement
@@ -120,6 +141,8 @@ def write_t12_categorized(ws, st, code_list_rows: int):
                        f"statement covering it; blank cells = that line not itemized in the "
                        f"statement owning that month.", font=_f(color=GREY, italic=True, size=8))
 
+    OUTLIER_FILL = "FCE4D6"                      # light amber for one-off spike cells
+    notable, mlabels = [], st.month_labels
     r = 3 if multi else 2
     for item in il.unified_lines(st):
         if item["type"] == "header":
@@ -131,14 +154,39 @@ def write_t12_categorized(ws, st, code_list_rows: int):
         _set(ws, r, 1, item["code"], font=_f(bold=True, color=BLUE), align="center")
         _set(ws, r, 2, f'=IFERROR(VLOOKUP($A{r},Codes!$A:$B,2,FALSE()),"")', font=_f(color=GREEN))
         _set(ws, r, 3, item["name"], font=_f(color=BLACK))
-        for k, v in enumerate(item["values"]):
-            if v is not None:
-                _set(ws, r, MS + k, v, font=_f(color=BLACK), fmt=MONEY)
+        vals = item["values"]
+        nz = sorted(abs(v) for v in vals if v is not None and abs(v) > 1e-9)
+        med = nz[len(nz) // 2] if nz else 0.0
+        for k, v in enumerate(vals):
+            if v is None:
+                continue
+            is_out = med > 0 and len(nz) >= 4 and abs(v) > 3.5 * med and abs(v) > 2000
+            _set(ws, r, MS + k, v, font=_f(color=BLACK), fmt=MONEY,
+                 fill=(_fill(OUTLIER_FILL) if is_out else None))
+            if is_out:
+                notable.append((abs(v) / med, item["name"], mlabels[k], v))
         _set(ws, r, total_col,
              f"=SUM({get_column_letter(MS)}{r}:{get_column_letter(MS + n - 1)}{r})",
              font=_f(bold=True, color=BLACK), fmt=MONEY)
         r += 1
     last_row = r - 1
+
+    # ---- outliers & notable patterns ----
+    r = last_row + 2
+    _set(ws, r, 1, "Outliers & Notable Patterns  (amber month cells = > 3.5× that line's median)",
+         font=_f(bold=True, color=NAVY))
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=min(total_col, 12))
+    r += 1
+    for note in _t12_patterns(st):
+        _set(ws, r, 1, "•  " + note, font=_f(color="843C0C"), wrap=True)
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=min(total_col, 12))
+        ws.row_dimensions[r].height = 28
+        r += 1
+    for ratio, name, mlab, v in sorted(notable, reverse=True)[:8]:
+        _set(ws, r, 1, f"•  {name}: {mlab} = ${v:,.0f}  ({ratio:.1f}× the line's median) "
+                       f"— one-off / reclass worth checking.", font=_f(color="843C0C"), wrap=True)
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=min(total_col, 12))
+        r += 1
 
     dv = DataValidation(type="list", formula1="CodeList", allow_blank=True, showDropDown=False)
     dv.error = "Pick a standardized code from the list (or clear to exclude)."
@@ -735,75 +783,6 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
             r += 1
 
     widths = [26, 14, 14, 14, 16, 40]
-    for c, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(c)].width = w
-    ws.sheet_view.showGridLines = False
-
-
-# ===========================================================================
-# TAB: Trends
-# ===========================================================================
-def write_trends(ws, tr: il.Trends):
-    _title_block(ws, "Trends", "Monthly trajectory + trailing annualizations (T12 / T6 / T3).")
-    # monthly table
-    r = 4
-    _set(ws, r, 1, "Monthly Performance", font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
-    for c in range(2, 8):
-        ws.cell(r, c).fill = _fill(SECT_FILL)
-    r += 1
-    cols = ["Month", "EGR", "Operating Exp", "NOI", "Rental Income", "Vacancy", "Loss-to-Lease"]
-    for c, h in enumerate(cols, 1):
-        _set(ws, r, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center", wrap=True)
-    r += 1
-    start = r
-    for i, mlabel in enumerate(tr.months):
-        _set(ws, r, 1, mlabel, font=_f(bold=True), align="center")
-        _set(ws, r, 2, tr.egr_by_month[i], fmt=MONEY, align="right")
-        _set(ws, r, 3, tr.opex_by_month[i], fmt=MONEY, align="right")
-        _set(ws, r, 4, tr.noi_by_month[i], fmt=MONEY, align="right")
-        _set(ws, r, 5, tr.rentinc_by_month[i], fmt=MONEY, align="right")
-        _set(ws, r, 6, tr.vac_by_month[i], fmt=MONEY, align="right")
-        _set(ws, r, 7, tr.ltl_by_month[i], fmt=MONEY, align="right")
-        r += 1
-    last = r - 1
-    _set(ws, r, 1, "Sum / T12", font=_f(bold=True, color=NAVY))
-    for c in range(2, 8):
-        L = get_column_letter(c)
-        _set(ws, r, c, f"=SUM({L}{start}:{L}{last})", font=_f(bold=True, color=NAVY), fmt=MONEY, align="right")
-        ws.cell(r, c).border = DBLTOP
-    ws.cell(r, 1).border = DBLTOP
-    r += 2
-
-    # annualizations
-    _set(ws, r, 1, "Trailing Annualizations", font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
-    for c in range(2, 5):
-        ws.cell(r, c).fill = _fill(SECT_FILL)
-    r += 1
-    _set(ws, r, 1, "Metric", font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL))
-    for c, p in enumerate(["T12", "T6", "T3"], 2):
-        _set(ws, r, c, p, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center")
-    r += 1
-    rowdefs = [("Effective Gross Revenue", "_EGR"), ("Operating Expenses", "_OPEX"),
-               ("Net Operating Income", "_NOI")]
-    for label, key in rowdefs:
-        _set(ws, r, 1, label, font=_f(bold=True))
-        for c, p in enumerate(["T12", "T6", "T3"], 2):
-            v = tr.periods.get(p, {}).get(key)
-            _set(ws, r, c, v if v is not None else "n/a", fmt=MONEY, align="right")
-        r += 1
-
-    # notes
-    if tr.notes:
-        r += 1
-        _set(ws, r, 1, "Observations", font=_f(bold=True, color=NAVY))
-        r += 1
-        for note in tr.notes:
-            _set(ws, r, 1, "•  " + note, font=_f(color=BLACK), wrap=True)
-            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
-            ws.row_dimensions[r].height = 30
-            r += 1
-
-    widths = [20, 14, 14, 14, 14, 14, 14]
     for c, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(c)].width = w
     ws.sheet_view.showGridLines = False

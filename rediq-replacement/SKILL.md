@@ -38,12 +38,15 @@ State which files you used and the operating period they cover.
 
 ## What it produces
 
-One workbook, `<Property>__Underwriting_Intake.xlsx`, with up to **nine** tabs (the
+One workbook, `<Property>__Underwriting_Intake.xlsx`, with up to **eight** tabs (the
 HelloData tab appears only when a HelloData CSV is provided):
 
-- **Dashboard** — snapshot (units, occupancy, SF, new/renewal counts, market/contract
-  rent, market-rent indicators, T12 EGR/Opex/NOI), **the unit mix** (see below), all
-  auto-raised flags (stitching + reconciliation + trend), and copy/paste instructions.
+- **Dashboard** — snapshot (units, occupancy, SF, new/renewal counts), a **data-vintage**
+  line (rent-roll as-of + latest financial statement), the **true-market-rent indicators**
+  (HelloData asking/effective **T90** mix-weighted + new-lease contract T90), T12
+  EGR/Opex/NOI, **the unit mix** (see below — its "Market Rent" column is the rent roll's
+  asking figure and is *not* a market-rent signal), all auto-raised flags, and copy/paste
+  instructions.
 - **T12 Categorized** — the **entire** stitched statement set in **one clean section**:
   an editable **Code** column (amber dropdown), Category via VLOOKUP, raw line item, **one
   column per month across the union of all uploaded periods**, and a Total. Every distinct
@@ -55,23 +58,29 @@ HelloData tab appears only when a HelloData CSV is provided):
 - **OS Summary** — the standardized chart of accounts, an exact clone of RedIQ's Overview
   template (A1:Q77), covering the **most recent 12 months** (the model paste target).
   Monthly cells are **live SUMIFS** over the `T12 Categorized` code column. The full
-  multi-period detail lives line-by-line on `T12 Categorized` and in summary on `Trends`,
-  so there is no separate "operating history" tab to duplicate it.
+  multi-period detail lives line-by-line on `T12 Categorized` and in summary on `Lease
+  Trend`, so there is no separate "operating history" tab to duplicate it.
 - **Rent Roll (One-Line)** — one row per unit. Core columns A–M match the model's `RR
   Dump`; then, after **one blank spacer column**, a **per-unit charge-code block** (one
   column per scheduled charge — Rent, RUBS, amenity, parking, pet, valet trash, etc.,
   ordered by total $) showing exactly what each unit is billed. The charge block is
   reference detail, not a model paste target.
-- **Lease Trend** — seasonality + market-rent trajectory: executed rents by quarter
-  (HelloData asking/effective, mix-weighted by floor plan, with concession depth) and
-  new-lease contract rents by quarter, T90 by floor plan, and the last-5 new leases per
-  plan (unit / date / rent / PSF).
+- **Lease Trend** — a **monthly** (left-to-right) grid over the **full HelloData + new-lease
+  history** (back as far as the data goes; financials populate the overlap):
+  **market rent** (HelloData executed asking/effective per unit, mix-weighted; HD concession
+  %; executed counts; new-lease contract/unit), **occupancy & rent position** (economic
+  occupancy, AGPR contract/unit, and **loss-to-lease backed into as HD market − AGPR**),
+  **concessions** (T12 % of AGPR vs HelloData new-lease %, with the new-lease-vs-portfolio
+  dilution explained), the **operating trend** (monthly EGR/Opex/NOI + T12/T6/T3
+  annualizations — folded in from the old Trends tab), and the last-5 new leases / T90 by
+  floor plan.
 - **HelloData** *(if provided)* — CSV pass-through matching the model's `HD Dump`.
 - **Reconciliation** — rent-roll ↔ T12 control tie-outs including the **T1 AGPR** tie
-  (RR contract rent ↔ latest-month annualized AGPR) and the **amenity-rent verification**,
-  a charge-code map flagging which charges are **in contract rent**, and flags.
-- **Trends** — monthly EGR/Opex/NOI/rental income/vacancy/loss-to-lease across the full
-  stitched series, T12 / T6 / T3 trailing annualizations, and YoY on overlapping months.
+  (RR contract rent ↔ latest-month annualized AGPR) and the **amenity-rent verification**;
+  a charge-code map flagging which charges are **in contract rent**; **correlated
+  cross-checks** (parking spaces billed ↔ T12 parking income; utility expense ↔ RUBS/billback
+  income = **% recaptured**); and flags. (The RR-vs-T12 market-rent gap is shown as
+  informational only — both are seller-set asking and not a market-rent signal.)
 - **Codes** — the standardized code legend and the dropdown's source list.
 
 The **unit mix** (on the Dashboard, beside the snapshot) covers each floor plan: bed/bath,
@@ -175,7 +184,7 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
   and including it ties the rent roll's contract rent tighter to the latest-month AGPR
   (verified on the Reconciliation tab).
 - **Faithfully surface, don't normalize.** Raw statements carry GL noise (one-off vacancy
-  or concession reclasses, lease-up ramps). Report it on Trends/flags; let the analyst
+  or concession reclasses, lease-up ramps). Report it on Lease Trend / flags; let the analyst
   normalize in the model.
 - **Detailed beats summary; recent owns overlaps.** A summary statement ties at subtotals
   but flattens `ltl`/`conc`/`RF`/`park` to zero for the months it owns. The freshest

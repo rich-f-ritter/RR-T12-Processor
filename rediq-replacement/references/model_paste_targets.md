@@ -107,9 +107,9 @@ over the union of their months. For paste targets:
   tab shows exactly the last 12 months of the stitched series. Copy its A1:Q77 / the 12
   most-recent month columns as usual.
 - **The full multi-period detail is on `T12 Categorized`** — every GL line once, with all
-  stitched months flowing across — and in summary on the `Trends` tab. There is no separate
-  "operating history" tab; the line-level history and the trailing-12 paste come from the
-  same `T12 Categorized` surface.
+  stitched months flowing across — and in summary on the `Lease Trend` tab (monthly
+  operating + market grid). There is no separate "operating history" tab; the line-level
+  history and the trailing-12 paste come from the same `T12 Categorized` surface.
 
 Overlapping months are owned by the freshest statement, so the stitched series never
 double-counts. If an overlap-disagreement or summary-granularity flag is raised on the
