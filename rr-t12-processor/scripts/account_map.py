@@ -113,7 +113,7 @@ def _family_from_section(section_hint):
     if re.search(r"utility billback|rubs|reimburs|recover", s):                   return "rubs"
     if re.search(r"concession", s):                                               return "concession"
     if re.search(r"rental adjustment|adjustments|vacancy|loss", s):              return "rentadj"
-    if re.search(r"gross potential|gross rent|rental (income|revenue)|scheduled rent", s): return "rent"
+    if re.search(r"gross potential|potential rent|gross rent|rental (income|revenue)|scheduled rent", s): return "rent"
     if re.search(r"write.?off", s):                                               return "writeoff"
     return None
 
@@ -143,8 +143,8 @@ def _split_maintenance(n):
     if re.search(r"turn|make.?ready|carpet clean|paint|interior repairs?.*unit|"
                  r"unit clean|vinyl|resurfac|key|lock", n):                      return "turn"
     # contract services (recurring vendor contracts)
-    if re.search(r"landscap|pest|extermin|snow|elevator|fire alarm|fire suppl|"
-                 r"sprinkler|courtesy patrol|security|contract clean|package|"
+    if re.search(r"landscap|pest|extermin|snow|elevator|fire alarm|fire suppl|fire.?/?life|"
+                 r"life safety|sprinkler|courtesy patrol|security|contract clean|package|"
                  r"valet|trash haul|fitness|pool service|monitor", n):           return "cont"
     # everything else physical R&M -> interior/exterior
     return "inter/exte"
@@ -196,7 +196,8 @@ REVENUE_RULES = [
     (r"vacanc", "vac"),
     (r"concession|free rent|chargeback concession", "conc"),
     (r"bad debt|collection loss|write.?off.*rent|rent.*write.?off|collected write|skip|uncollect", "cl"),
-    (r"gross market rent|market rent|gross potential|gross rent|rental income|scheduled rent|base rent|^rent$", "Rentinc"),
+    (r"gross market rent|market rent|gross mkt|mkt rent|gross potential|potential rent|"
+     r"gross rent|rental income|scheduled rent|base rent|^rent$", "Rentinc"),
     (r"month.?to.?month|mtm|short.?term lease|stl fee", "Rentinc"),
     (r"water.*reimb|sewer.*reimb|rubs.*water|water.*billback|sewer.*billback", "RWS"),
     (r"trash.*reimb|rubs.*trash|trash.*billback|valet.*trash|trash.*recovery|trash.*income", "RT"),
@@ -242,6 +243,15 @@ def _match(name, rules):
 # ---------------------------------------------------------------------------
 def _override(name):
     n = (name or "").strip().lower()
+    # Utility "Rebill" / "Reimbursed" lines are RUBS recovery REVENUE regardless of which
+    # side of the statement the operator parks them on (some book them in the expense
+    # section). Resolve them up front so they don't read as a utility expense. EXCLUDE
+    # billing/service "fee" lines — those are the expense the property pays to run the
+    # rebilling program (e.g. "Utility Rebill Service Fees" -> stays a utility fee).
+    if re.search(r"rebill|reimburs", n) and not re.search(r"\bfee", n):
+        if re.search(r"water|sewer", n):                  return "RWS"
+        if re.search(r"trash|refuse|garbage", n):         return "RT"
+        return "RF"
     # forced-placed / tenant-liability insurance EXPENSE -> G&A (per methodology), not Contract/Insurance
     if re.search(r"forced.?placed|tenant liability insurance|legal liability insurance", n):
         return "GA"
@@ -258,7 +268,7 @@ def _rev_adjustment(n):
     if re.search(r"loss to lease|gain to lease|loss/gain|gain/loss|loss to old lease|"
                  r"market (loss|gain)", n):                                       return "ltl"
     if re.search(r"non.?revenue|employee unit|model (&|and|/)?\s*storage|model unit|"
-                 r"storage unit|down unit|admin unit|staff unit|office unit|mgr unit", n): return "nr"
+                 r"\bmodels?\b|storage unit|down unit|admin unit|staff unit|office unit|mgr unit", n): return "nr"
     if re.search(r"bad debt|write.?off|collection loss|uncollect|skip", n):       return "cl"
     if re.search(r"concession|free rent", n):                                     return "conc"
     if re.search(r"vacanc|loss to vacancy", n):                                   return "vac"

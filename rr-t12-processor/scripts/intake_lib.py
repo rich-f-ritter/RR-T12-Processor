@@ -207,7 +207,7 @@ def parse_t12(path: str) -> T12:
                  if any(isinstance(ws.cell(r, c).value, (int, float)) for c in month_cols)]
 
     def _codelike(s):
-        return _is_glnum(s) and ("-" in s or (s.isdigit() and 3 <= len(s) <= 5))
+        return _is_glnum(s) and ("-" in s or (s.isdigit() and 3 <= len(s) <= 6))
 
     def _scan(cols):
         gl, txt, tl = {}, {}, {}
