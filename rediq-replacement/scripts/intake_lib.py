@@ -699,6 +699,23 @@ def recent_new_leases(rr: RentRoll, n: int = 5) -> dict:
     return out
 
 
+def new_lease_t90(rr: RentRoll, days: int = 90) -> float:
+    """Avg contract rent of NEW leases signed in the trailing `days`, anchored on the
+    most recent new-lease start in the rent roll. The preferred 'true market rent' read
+    alongside HelloData executed asking."""
+    pts = []
+    for u in rr.units:
+        if classify_lease(u) == "new":
+            d = _to_date(u.lease_start)
+            if d and u.contract_rent > 0:
+                pts.append((d, u.contract_rent))
+    if not pts:
+        return 0.0
+    anchor = max(d for d, _ in pts)
+    sel = [c for d, c in pts if (anchor - d).days <= days]
+    return sum(sel) / len(sel) if sel else 0.0
+
+
 def _hd_dates(hd: HelloData):
     return [d for d in (_to_date(r.get("Off Market Date")) for r in hd.rows) if d]
 
@@ -768,11 +785,19 @@ class Reconciliation:
     lines: list                 # list[ReconLine]
     flags: list                 # list[str]
     charge_map: list            # list[(charge_code, code, ytype, sched$, in_contract)]
+    correlations: list = field(default_factory=list)   # list[(label, detail_str)]
 
 
 def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
     midx = t12.n_months - 1
     latest = t12.month_labels[midx] if t12.months else ""
+    # trailing-12 (or all) monthly average per code — steadier than a single month
+    n = t12.n_months
+    last12 = list(range(max(0, n - 12), n))
+    _k = len(last12) or 1
+
+    def t12_avg(*codes):
+        return sum(t12.code_total(c, i) for c in codes for i in last12) / _k
 
     # rent-roll scheduled charge totals by our code
     rr_market = sum(u.market_rent for u in rr.units)
@@ -847,8 +872,44 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
                 f"'{cc}' (${amt:,.0f}/mo, RUBS-style recovery) -- confirm whether it "
                 f"nets against the trash expense or books as Other Income (RT).")
             break
+
+    # ---- correlated cross-checks: rent-roll counts/charges vs T12 income lines ----
+    correlations = []
+
+    # Parking — units billed for parking on the RR vs T12 parking income (T12 avg/mo)
+    park_units, rr_park = 0, 0.0
+    for u in rr.units:
+        upark = sum(amt for cc, amt in u.charges.items()
+                    if am.categorize_charge(cc)[0] == "park")
+        if upark > 0:
+            park_units += 1
+            rr_park += upark
+    t12_park = t12_avg("park")
+    if park_units or t12_park:
+        per = (rr_park / park_units) if park_units else 0
+        cap = (t12_park / rr_park * 100) if rr_park else None
+        correlations.append((
+            "Parking",
+            f"RR: {park_units} units billed parking, ${rr_park:,.0f}/mo "
+            f"(avg ${per:,.0f}/space)  ↔  T12 parking income ${t12_park:,.0f}/mo"
+            + (f"  —  {cap:.0f}% of RR-scheduled parking appears on the T12."
+               if cap is not None else "")))
+
+    # Utility recapture (RUBS / billbacks) — what % of utility expense is recovered
+    util_exp = t12_avg("UWS", "UC", "UF", "UT")
+    rubs_inc = t12_avg("RWS", "RT", "RF")
+    ws_exp, ws_rec = t12_avg("UWS"), t12_avg("RWS")
+    if util_exp:
+        detail = (f"T12 utility expense ${util_exp:,.0f}/mo (UWS+UC+UF+UT)  ↔  RUBS/billback "
+                  f"income ${rubs_inc:,.0f}/mo (RWS+RT+RF)  =  {rubs_inc/util_exp*100:.0f}% recaptured")
+        if ws_rec > 0 and ws_exp:
+            detail += f"  ·  water/sewer alone {ws_rec/ws_exp*100:.0f}% (${ws_rec:,.0f}/${ws_exp:,.0f})"
+        elif rubs_inc > 0:
+            detail += "  ·  operator books reimbursement in a single line (RF), not split by utility"
+        correlations.append(("Utility recapture (RUBS)", detail))
+
     return Reconciliation(latest_month=latest, lines=lines, flags=flags,
-                          charge_map=charge_map)
+                          charge_map=charge_map, correlations=correlations)
 
 
 # ===========================================================================

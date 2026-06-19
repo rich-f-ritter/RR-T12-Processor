@@ -18,6 +18,7 @@ CLI:
 import argparse
 import datetime as _dt
 import os
+import re
 import sys
 
 from openpyxl import Workbook
@@ -376,7 +377,7 @@ def write_unit_mix_block(ws, mix, has_hd, r0, c0):
         return get_column_letter(c0 + j)
 
     hdr = ["Floor Plan", "Bed", "Bath", "Units", "Occ", "Vac", "Avg SF",
-           "Avg Market\nRent", "Avg Contract\nRent", "New\nLeases", "Renew\nLeases",
+           "Avg Market Rent\n(per RR — not a\nmkt signal)", "Avg Contract\nRent", "New\nLeases", "Renew\nLeases",
            "Avg New-Lease\n(last 5)", "New #1", "New #2", "New #3", "New #4", "New #5",
            "HD T90\nAsking", "HD T90\nEffective", "HD T365\nAsking", "HD T365\nEffective",
            "HD90 YoY\nAsking", "HD90 YoY\nEffective", "Bed/Bath\nSrc"]
@@ -628,6 +629,20 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
              font=_f(bold=True, color=("008000" if isc else "C00000")), align="center")
         r += 1
 
+    if getattr(rec, "correlations", None):
+        r += 1
+        _set(ws, r, 1, "Correlated Cross-Checks (rent-roll counts/charges ↔ T12 income)",
+             font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
+        for c in range(2, 7):
+            ws.cell(r, c).fill = _fill(SECT_FILL)
+        r += 1
+        for label, detail in rec.correlations:
+            _set(ws, r, 1, label, font=_f(bold=True, color=NAVY))
+            _set(ws, r, 2, detail, font=_f(color=BLACK), wrap=True)
+            ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
+            ws.row_dimensions[r].height = 30
+            r += 1
+
     if rec.flags:
         r += 1
         _set(ws, r, 1, "⚑ Flags for Underwriting", font=_f(bold=True, color=WHITE), fill=_fill("C00000"))
@@ -746,12 +761,15 @@ def write_codes(ws):
 # ===========================================================================
 # TAB: Dashboard
 # ===========================================================================
-def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd):
+def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
+                    rr_asof="n/a", stmt_asof="n/a"):
     _set(ws, 1, 1, f"{prop_name} — Underwriting Intake", font=_f(bold=True, color=NAVY, size=16))
     nfiles = len(st.files)
     span = f"{st.month_labels[0]} – {st.month_labels[-1]} ({st.n_months} mo" \
            + (f", {nfiles} statements stitched" if nfiles > 1 else "") + ")"
     _set(ws, 2, 1, f"Generated {_dt.date.today():%B %d, %Y}  ·  RedIQ-replacement intake  ·  Operating period {span}",
+         font=_f(color=GREY, italic=True))
+    _set(ws, 3, 1, f"Data vintage  ·  Rent roll as-of {rr_asof}  ·  Latest financial statement thru {stmt_asof}",
          font=_f(color=GREY, italic=True))
 
     occ = sum(1 for u in rr.units if u.occupancy == "Occupied")
@@ -764,10 +782,18 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd):
     newc = sum(1 for u in rr.units if il.classify_lease(u) == "new")
     renc = sum(1 for u in rr.units if il.classify_lease(u) == "renewal")
     t12p = tr.periods.get("T12", {})
-    last_hd = next((lt.hd_ask_by_q[i] for i in range(len(lt.quarters) - 1, -1, -1)
-                    if lt.hd_ask_by_q[i] > 0), 0)
-    last_new = next((lt.new_rent_by_q[i] for i in range(len(lt.quarters) - 1, -1, -1)
-                     if lt.new_rent_by_q[i] > 0), 0)
+
+    # T90 market-rent indicators (trailing 90 days), mix-weighted by unit count
+    def _mixwt(attr):
+        num = den = 0.0
+        for m in mix:
+            v = getattr(m, attr, 0) or 0
+            if v > 0 and m.units:
+                num += v * m.units; den += m.units
+        return num / den if den else 0
+    hd_t90_ask = _mixwt("t90_ask")
+    hd_t90_eff = _mixwt("t90_eff")
+    new_t90 = il.new_lease_t90(rr)        # avg new-lease contract rent, trailing 90d
 
     # ---- snapshot (left, cols A-B) ----
     r = 4
@@ -780,14 +806,12 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd):
         ("Occupancy %", (occ / nunits) if nunits else 0, "0.0%"),
         ("Total Rentable SF", tsf, INT),
         ("New / Renewal leases", f"{newc} / {renc}", None),
-        ("Gross Market Rent (mo.)", mkt, MONEY),
-        ("Contract Rent incl. amenity (mo.)", con, MONEY),
-        ("Loss-to-Lease (mo.)", con - mkt, MONEY),
-        ("— Market Rent Indicators —", "", None),
+        ("— Market Rent Indicators (true signal) —", "", None),
     ]
     if has_hd:
-        rows.append(("HelloData asking, latest qtr (mix-wtd)", round(last_hd) if last_hd else "n/a", MONEY if last_hd else None))
-    rows.append(("New-lease contract, latest qtr", round(last_new) if last_new else "n/a", MONEY if last_new else None))
+        rows.append(("HelloData asking, T90 (mix-wtd)", round(hd_t90_ask) if hd_t90_ask else "n/a", MONEY if hd_t90_ask else None))
+        rows.append(("HelloData effective, T90 (mix-wtd)", round(hd_t90_eff) if hd_t90_eff else "n/a", MONEY if hd_t90_eff else None))
+    rows.append(("New-lease contract, T90 (avg)", round(new_t90) if new_t90 else "n/a", MONEY if new_t90 else None))
     rows += [
         ("— T12 Annualized (most recent 12 mo.) —", "", None),
         ("Effective Gross Revenue (T12)", t12p.get("_EGR"), MONEY),
@@ -871,6 +895,15 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None):
     st = il.stitch_statements(list(t12_paths))
     rr = il.parse_rent_roll(rr_path)
     hd = il.parse_hellodata(hd_path) if hd_path else None
+
+    # data vintage — prefer a precise date from the filename, else the in-file label
+    def _file_date(path):
+        m = re.search(r"(20\d{2})[._\-](\d{2})[._\-](\d{2})", os.path.basename(path))
+        return f"{m.group(2)}/{m.group(3)}/{m.group(1)}" if m else None
+    rr_asof = _file_date(rr_path) or rr.as_of or "n/a"
+    # latest statement = the freshest stitched file's window end (and its file date if present)
+    latest_t12 = max(t12_paths, key=lambda p: (_file_date(p) or "", p))
+    stmt_asof = (st.month_labels[-1] if st.month_labels else "n/a")
     if not prop_name:
         prop_name = (st.title or os.path.splitext(os.path.basename(rr_path))[0]).strip()
     recent_new = il.recent_new_leases(rr, 5)
@@ -909,7 +942,8 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None):
         write_hellodata(ws_hd, hd)
     write_reconciliation(ws_rec, rec, rr)
     write_trends(ws_tr, tr)
-    write_dashboard(ws_dash, prop_name, st, rr, mix, rec, tr, lt, has_hd=bool(hd))
+    write_dashboard(ws_dash, prop_name, st, rr, mix, rec, tr, lt, has_hd=bool(hd),
+                    rr_asof=rr_asof, stmt_asof=stmt_asof)
 
     if not out_path:
         safe = "".join(ch if ch.isalnum() else "_" for ch in prop_name).strip("_")
