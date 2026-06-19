@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Generated workbooks
+dev/out/
+
+# Real property financials — kept LOCAL by default (see dev/testdata/README.md).
+# Flip these off if you want the fixtures committed for cross-session reproducibility.
+dev/testdata/*.xlsx
+dev/testdata/*.csv
+dev/golden/*.xlsx
+
+# LibreOffice scratch
+.~lock.*#
