@@ -106,13 +106,16 @@ def _family_from_section(section_hint):
     # must land in the non-op codes (intex/prin/depex/icd/onoe), never operating G&A.
     if re.search(r"debt service|financing", s):                                   return "nonop"
     if re.search(r"depreciation|amortization", s):                                return "nonop"
+    if re.search(r"routine replacement|replacement reserve|replacement expense|"
+                 r"capital (expenditure|improvement|reserve)", s):                return "nonop"
     if re.search(r"non.?operating|partnership|owner (expense|draw|distribution)|"
                  r"owner['’]s", s):                                               return "nonop"
     if re.search(r"payroll|personnel|salaries|compensation|labor", s):           return "payroll"
     if re.search(r"advertis|marketing", s):                                       return "marketing"
     if re.search(r"general.*admin|administ|g\s*&\s*a|g/a|office", s):             return "admin"
     if re.search(r"utilit", s):                                                   return "utilities"
-    if re.search(r"maintenance|repairs|r\s*&\s*m|make.?ready|turnover", s):       return "maintenance"
+    if re.search(r"make[\s\-/]*ready|redecorat", s):                             return "makeready"
+    if re.search(r"maintenance|repairs|r\s*&\s*m|turnover", s):                   return "maintenance"
     if re.search(r"management fee|mgmt fee|management$", s):                       return "mgmt"
     if re.search(r"tax|insurance", s):                                            return "taxins"
     if re.search(r"contract", s):                                                 return "contract"
@@ -144,6 +147,13 @@ def _split_utilities(n):
     if re.search(r"billing|transfer|audit|util.*fee|admin fee", n):              return "UF"
     if re.search(r"electric|gas|common|vacant|cable|energy|power", n):           return "UC"
     return "UC"
+
+def _split_makeready(n):
+    # Make-ready / redecorating section: unit-turn work by default. Only carve out the
+    # handful of recurring vendor-contract lines an operator may park here.
+    if re.search(r"landscap|pest|extermin|elevator|security|courtesy|pool service|"
+                 r"valet|trash haul|monitor|\bfire\b", n):                       return "cont"
+    return "turn"
 
 def _split_maintenance(n):
     # turnover: make-ready / unit turn work
@@ -187,13 +197,23 @@ def _split_rentadj(n):
     if re.search(r"concession|free rent|chargeback", n):                         return "conc"
     if re.search(r"loss to lease|gain to lease|loss/gain|gain/loss|market loss|market gain", n): return "ltl"
     if re.search(r"bad debt|collection|write.?off|uncollect|skip", n):           return "cl"
-    # Some operators dump non-operating / balance-sheet flows into a generic
-    # "Adjustments" grab-bag (distributions, owner contributions, loan & mortgage
-    # principal, interest, depreciation). Route those to the non-op codes so they
-    # don't masquerade as vacancy and distort EGR.
+    # Some operators dump a whole trial-balance into a generic "Adjustments" grab-bag:
+    # capital / major repairs, balance-sheet accounts, financing & equity flows. RedIQ
+    # excludes all of these from the operating statement, so route them BELOW NOI rather
+    # than letting them masquerade as vacancy and distort EGR.
+    #   capital / major repairs / renovations -> Capital Improvements
+    if re.search(r"major repair|maj\.? *repair|renovation|capital|appliance|water heater|"
+                 r"\bhvac\b|\broof|carpet|floor|tile|building|mini ?blind|drape|signage|"
+                 r"vehicle|software|plumbing|electrical|termite|fire ?& ?life|fire and life", n): return "capx"
+    #   balance-sheet / accrual / escrow / payable-receivable accounts -> excluded (non-op)
+    if re.search(r"escrow|receivable|payable|prepaid|accrued|deposit|doubtful|"
+                 r"unclaimed|intra.?company|allowance|sales tax", n):             return "onoe"
+    #   financing / equity / depreciation (interest, principal, distributions, loans...)
     nop = _split_nonop(n, default=None)
     if nop:                                                                       return nop
-    return "vac"
+    # an unrecognized line in an "adjustments" grab-bag is almost never true vacancy;
+    # exclude it from NOI (and flag for review) rather than silently book it as vacancy.
+    return "onoe"
 
 def _split_nonop(n, default="onoe"):
     if re.search(r"interest", n):                                                return "intex"
@@ -336,6 +356,7 @@ def categorize_t12_line(name, side, section_hint=None, acct_number=None):
     if fam == "marketing":   return "adv"
     if fam == "admin":       return "GA"
     if fam == "utilities":   return _split_utilities(n)
+    if fam == "makeready":   return _split_makeready(n)
     if fam == "maintenance": return _split_maintenance(n)
     if fam == "mgmt":        return "mgt"
     if fam == "taxins":      return _split_taxins(n)

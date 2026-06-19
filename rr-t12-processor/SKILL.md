@@ -36,7 +36,9 @@ the underwriting model. Deep submarket comp work belongs to
    **move-in** and ideally **lease start** dates (used to split new vs renewal — see *New vs
    renewal*); the parser auto-detects the column layout (two-row headers, and both
    **charge-code sub-row** "block" rolls and **flat/wide** rolls where each charge is its own
-   column) and the unit-id format.
+   column) and the unit-id format. OneSite-style rolls that list an upcoming lease
+   (Applicant / Pending renewal / Future) as a **second row** per unit are collapsed to one
+   row per physical unit, so unit counts and occupancy tie to the operator's own totals.
 3. **HelloData "Unit Details" CSV** *(optional)* — supplies clean bed/bath, the **T90
    executed** market-rent indicator per floor plan, and the monthly market-rent trend.
    It is joined to the rent roll **by unit number**, so HelloData's marketing floor-plan

@@ -542,6 +542,18 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
                     nm = _resolve_charge(hdr)
                     u.charges[nm] = u.charges.get(nm, 0.0) + amt
             units.append(u)
+        # OneSite-style rolls list an upcoming lease (Applicant / Pending renewal /
+        # Future) as a SECOND row for a unit, alongside the current physical record.
+        # Collapse to one row per unit, keeping the physical-status row — it carries
+        # market rent, whereas the future-lease row shows market 0. This matches the
+        # way RedIQ (and the operator's own unit count) report distinct units.
+        if len(units) != len({u.unit for u in units}):
+            chosen = {}
+            for u in units:
+                prev = chosen.get(u.unit)
+                if prev is None or (u.market_rent or 0) > (prev.market_rent or 0):
+                    chosen[u.unit] = u
+            units = list(chosen.values())
     else:
         # ---- BLOCK format (Yardi/CBREI): charge sub-rows beneath each unit row ----
         units, cur_plan = [], ""
