@@ -133,7 +133,8 @@ def write_t12_categorized(ws, st, code_list_rows: int):
         d = _dt.datetime(months[k][1][0], months[k][1][1], 1)
         _set(ws, 1, MS + k, d, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
              fmt=MONF, align="center")
-    _set(ws, 1, total_col, "Total", font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center")
+    _set(ws, 1, total_col, ("T12 Total" if n > 12 else "Total"),
+         font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL), align="center", wrap=True)
     # optional sourcing note when multiple statements are stitched
     if multi:
         src = " · ".join(f"{f.label} ({f.t12.month_labels[0]}\u2013{f.t12.month_labels[-1]})"
@@ -167,7 +168,7 @@ def write_t12_categorized(ws, st, code_list_rows: int):
             if is_out:
                 notable.append((abs(v) / med, item["name"], mlabels[k], v))
         _set(ws, r, total_col,
-             f"=SUM({get_column_letter(MS)}{r}:{get_column_letter(MS + n - 1)}{r})",
+             f"=SUM({get_column_letter(MS + max(0, n - 12))}{r}:{get_column_letter(MS + n - 1)}{r})",
              font=_f(bold=True, color=BLACK), fmt=MONEY)
         r += 1
     last_row = r - 1
