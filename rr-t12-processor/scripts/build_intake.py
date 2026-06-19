@@ -953,7 +953,8 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
 # ===========================================================================
 # DRIVER
 # ===========================================================================
-def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None, charge_codes_path=None):
+def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None,
+          charge_codes_path=None, hd_fee_offset=None):
     if isinstance(t12_paths, (str, bytes)):
         t12_paths = [t12_paths]
     st = il.stitch_statements(list(t12_paths))
@@ -971,10 +972,48 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None, charg
     stmt_asof = (st.month_labels[-1] if st.month_labels else "n/a")
     if not prop_name:
         prop_name = (st.title or os.path.splitext(os.path.basename(rr_path))[0]).strip()
-    mix = il.build_unit_mix(rr, hd)   # joins HelloData by unit #, uses RR as-of for new/renewal
+    # HelloData scrapes the website "Total Monthly", which can bundle mandatory flat fees
+    # (valet trash, pest, utility admin, …) on top of base rent — inflating HD vs the rent
+    # roll's base/contract rent. Net them out for comparability. The bundle is auto-detected
+    # from the rent roll, but only APPLIED when the data supports it: HD raw asking must sit
+    # roughly a bundle above the new-lease base rent (evidence the website actually bundles).
+    # --hd-fee-offset overrides the amount outright.
+    def _mw(rows, attr):
+        num = den = 0.0
+        for m in rows:
+            v = getattr(m, attr, 0) or 0
+            if v > 0 and m.units:
+                num += v * m.units; den += m.units
+        return num / den if den else 0.0
+    bundle_total, bundle_comps = il.mandatory_fee_bundle(rr)
+    hd_fee, calib_gap = 0.0, None
+    if hd_fee_offset is not None:
+        hd_fee = hd_fee_offset
+    elif hd and bundle_total > 0:
+        hd_raw = _mw(il.build_unit_mix(rr, hd, hd_fee=0.0), "t90_ask")   # gross HD T90 asking
+        base = il.new_lease_t90(rr)                                      # rent-roll new-lease base
+        calib_gap = (hd_raw - base) if (hd_raw and base) else None
+        if calib_gap is not None and calib_gap >= 0.5 * bundle_total:
+            hd_fee = bundle_total
+    mix = il.build_unit_mix(rr, hd, hd_fee=hd_fee)   # joins HD by unit #; RR as-of for new/renewal
     rec = il.reconcile(st, rr)
     tr = il.build_trends(st, rr)
-    lt = il.build_lease_trend(rr, hd)
+    lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee)
+    if hd and bundle_total > 0:
+        comp_txt = ", ".join(f"{cc} ${amt:,.2f}" for cc, amt in bundle_comps) or "—"
+        if hd_fee > 0:
+            note = (f"HelloData reflects the website 'Total Monthly', which bundles mandatory fees; "
+                    f"HD market rent is shown NET of ${hd_fee:,.2f}/mo for comparability to "
+                    f"base/contract rent. Detected from the rent roll: {comp_txt}.")
+            if hd_fee_offset is None:
+                note += (" Verify the website for admin/utility fees not itemized per-unit on the "
+                         "rent roll; override with --hd-fee-offset if the true bundle differs.")
+        else:
+            note = (f"Detected ${bundle_total:,.2f}/mo of mandatory flat fees on the rent roll "
+                    f"({comp_txt}), but HelloData asking does NOT sit a bundle above the new-lease "
+                    f"base rent, so HD is shown gross (not netted). If the property website bundles "
+                    f"fees into its asking price, set --hd-fee-offset to net them out.")
+        lt.notes.insert(0, note)
 
     n = st.n_months
 
@@ -1022,10 +1061,14 @@ def main():
     ap.add_argument("--charge-codes", default=None, dest="charge_codes",
                     help="Optional charge-code lookup (Account/Name[/Type]) for rent rolls "
                          "that bill by numeric code rather than name.")
+    ap.add_argument("--hd-fee-offset", dest="hd_fee_offset", type=float, default=None,
+                    help="Override the $/mo of mandatory fees HelloData bundles into asking "
+                         "rent (else auto-detected from the rent roll).")
     ap.add_argument("--name", default=None)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    out = build(a.t12, a.rr, a.hd, a.name, a.out, charge_codes_path=a.charge_codes)
+    out = build(a.t12, a.rr, a.hd, a.name, a.out, charge_codes_path=a.charge_codes,
+                hd_fee_offset=a.hd_fee_offset)
     print(out)
 
 

@@ -746,8 +746,42 @@ class UnitMixRow:
     yoy_eff: object = None
 
 
+def mandatory_fee_bundle(rr: RentRoll, occ_threshold: float = 0.8):
+    """Detect the mandatory flat monthly fees that a property bills on (nearly) every
+    unit — valet trash, pest, utility-billing admin, tech, etc. Property websites fold
+    these into the headline "Total Monthly" price, which is what HelloData scrapes, so
+    HelloData asking/effective is inflated by this bundle versus base/contract rent.
+
+    Returns (total, [(charge_name, amount), ...]). A fee qualifies if it is NOT contract
+    rent, appears on >= occ_threshold of occupied units, is positive, and is essentially
+    a flat amount (one dominant value). NOTE: the rent roll only itemizes fees billed
+    per-unit; website-only admin fees (e.g. a utility-billing fee embedded in RUBS) may
+    not appear here — use --hd-fee-offset to set the exact website bundle when known."""
+    from collections import Counter, defaultdict
+    occ = [u for u in rr.units if u.contract_rent > 0]
+    n = len(occ)
+    if not n:
+        return 0.0, []
+    cnt, amts = Counter(), defaultdict(Counter)
+    for u in occ:
+        for cc, amt in u.charges.items():
+            if am.categorize_charge(cc)[1]:           # skip contract (base/amenity) rent
+                continue
+            cnt[cc] += 1
+            amts[cc][round(amt, 2)] += 1
+    comps = []
+    for cc, c in cnt.items():
+        if c < occ_threshold * n:
+            continue
+        modal, mc = amts[cc].most_common(1)[0]
+        if modal > 0 and mc >= 0.8 * c:               # flat (one dominant amount), positive
+            comps.append((cc, modal))
+    comps.sort(key=lambda x: -x[1])
+    return round(sum(a for _, a in comps), 2), comps
+
+
 def build_unit_mix(rr: RentRoll, hd: Optional[HelloData],
-                   recent_new=None, t90=None, t365=None, t90_prior=None) -> list:
+                   recent_new=None, t90=None, t365=None, t90_prior=None, hd_fee=0.0) -> list:
     ref_date = rr.as_of_date
     if recent_new is None:
         recent_new = recent_new_leases(rr, 5, ref_date)
@@ -801,6 +835,10 @@ def build_unit_mix(rr: RentRoll, hd: Optional[HelloData],
         t3 = t365.get(plan) or t365.get(bp, {})
         tp = t90_prior.get(plan) or t90_prior.get(bp, {})
 
+        def _net(d, k):                          # HelloData rent net of bundled mandatory fees
+            v = d.get(k, 0.0)
+            return max(0.0, v - hd_fee) if v else 0.0
+
         def _yoy(cur, prior):
             return (cur / prior - 1) if (cur and prior) else None
         mix.append(UnitMixRow(
@@ -813,10 +851,10 @@ def build_unit_mix(rr: RentRoll, hd: Optional[HelloData],
             bedbath_source=src, hd_names=hd_names.get(plan, ""),
             new_count=nc, renewal_count=rc,
             new_last5_rents=nl_rents, avg_new_last5=avg_nl,
-            t90_ask=t.get("ask", 0.0), t90_eff=t.get("eff", 0.0), t90_n=t.get("n", 0),
-            t365_ask=t3.get("ask", 0.0), t365_eff=t3.get("eff", 0.0), t365_n=t3.get("n", 0),
-            yoy_ask=_yoy(t.get("ask", 0.0), tp.get("ask", 0.0)),
-            yoy_eff=_yoy(t.get("eff", 0.0), tp.get("eff", 0.0)),
+            t90_ask=_net(t, "ask"), t90_eff=_net(t, "eff"), t90_n=t.get("n", 0),
+            t365_ask=_net(t3, "ask"), t365_eff=_net(t3, "eff"), t365_n=t3.get("n", 0),
+            yoy_ask=_yoy(_net(t, "ask"), _net(tp, "ask")),
+            yoy_eff=_yoy(_net(t, "eff"), _net(tp, "eff")),
         ))
     mix.sort(key=lambda m: ((m.bed if isinstance(m.bed, int) else 99), m.plan))
     return mix
@@ -1458,7 +1496,7 @@ def _quarter(d):
     return (d.year, (d.month - 1) // 3 + 1)
 
 
-def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
+def build_lease_trend(rr: RentRoll, hd: Optional[HelloData], hd_fee: float = 0.0) -> LeaseTrend:
     ref_date = rr.as_of_date
     recent = recent_new_leases(rr, 5, ref_date)
     plan_of = _hd_plan_of(rr)        # HelloData -> RR floor plan via unit-number join
@@ -1504,8 +1542,9 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
                 ne += (sum(cell["eff"]) / len(cell["eff"])) * w; de += w; cnt += len(cell["eff"])
         a = na / da if da else 0.0
         e = ne / de if de else 0.0
-        hd_ask[ym], hd_eff[ym] = a, e
-        hd_conc[ym] = (1 - e / a) if (a > 0 and e > 0) else 0.0
+        hd_conc[ym] = (1 - e / a) if (a > 0 and e > 0) else 0.0   # ratio from GROSS rents
+        hd_ask[ym] = max(0.0, a - hd_fee) if a else 0.0           # net of bundled fees
+        hd_eff[ym] = max(0.0, e - hd_fee) if e else 0.0
         hd_n[ym] = cnt
 
     new_pm, new_cnt = {}, {}          # (ym,plan) -> [contract rents] ; ym -> count
