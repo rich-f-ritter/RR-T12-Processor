@@ -56,6 +56,17 @@ def _is_glnum(s):
     return bool(re.fullmatch(r"\d{3,8}(?:[-.]\d{1,6})*", _s(s)))
 
 
+def _is_rollup(name, gl):
+    """True if a GL row is a subtotal/parent rollup rather than a postable leaf.
+    Detected by an unambiguous 'Total/Net/Subtotal' name prefix or the Yardi-tree
+    rollup account suffix (…-098 / …-099). Deliberately does NOT key on words like
+    'potential', which appear in real leaf line names (e.g. 'Gross Potential Rent')."""
+    n = _s(name).lower()
+    if re.match(r"^(total\b|net\b|subtotal|sub-total)", n):
+        return True
+    return bool(re.search(r"-0?9[89]$", _s(gl)))
+
+
 def _is_date(v):
     return isinstance(v, (_dt.datetime, _dt.date))
 
@@ -248,9 +259,23 @@ def parse_t12(path: str) -> T12:
                 rows.append(T12Row("header", name, cur_section))
             continue
 
-        # real postable line
+        # row carries a GL account number
         if not name:
             name = gl
+        if not has_vals:
+            # parent/rollup node with no values (hierarchical tree export) -> a
+            # section header that provides categorization context for its children
+            cur_section = name
+            rows.append(T12Row("header", name, cur_section))
+            continue
+        if _is_rollup(name, gl):
+            # a subtotal that happens to carry an account number (Yardi tree: the
+            # '-098/-099' rollup accounts, or 'Total …' / 'Net …' lines). Exclude
+            # from postable totals so children aren't double-counted.
+            rows.append(T12Row("subtotal", name, cur_section, values=vals, total=sum(vals)))
+            continue
+
+        # real postable (leaf) line
         digits = re.sub(r"\D", "", gl)
         if _REV_SECTIONS.search(cur_section) or digits[:1] == "4":
             side = "rev"
@@ -293,6 +318,7 @@ class RRUnit:
 class RentRoll:
     units: list
     as_of: str = ""
+    as_of_date: object = None                              # parsed as-of date (if available)
     charge_summary: dict = field(default_factory=dict)     # code -> (sched$, ycode_type)
     status_summary: dict = field(default_factory=dict)     # status -> (count, pct)
     footer_unit_mix: dict = field(default_factory=dict)    # plan -> (rentable, occ, avgmkt, avgsched)
@@ -300,7 +326,18 @@ class RentRoll:
 
 
 _UNIT_RE = re.compile(r"^[A-Za-z0-9]+-[A-Za-z]*\d")   # e.g. A-101, B-302, J-J3086 (digit after dash)
-# matches real unit ids but NOT plan tokens like 'C2-A' or subtotal rows.
+
+
+def _looks_like_unit(s):
+    """A rent-roll unit id: dashed (A-101, 01-0111) or plain (1001, 101A, B204).
+    Must contain a digit, be short, single-token, and not a 'Total' label. The unit
+    loop additionally requires a numeric SQFT cell, which guards against false hits."""
+    s = _s(s)
+    if not s or len(s) > 12 or " " in s:
+        return False
+    if not re.search(r"\d", s) or s.endswith("Total:") or s.lower() in ("total", "unit"):
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.\-]{0,11}", s))
 
 
 def _occ_from_status(status: str) -> str:
@@ -318,7 +355,7 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
     # choose the sheet that actually holds the unit detail (most unit-id rows in col A)
     ws = max(wb.worksheets,
              key=lambda w: sum(1 for r in range(1, min(w.max_row, 500) + 1)
-                               if _UNIT_RE.match(_s(w.cell(r, 1).value))))
+                               if _looks_like_unit(w.cell(r, 1).value)))
 
     # as-of date: an 'As Of = ...' label in the first few rows, else fall back
     as_of = ""
@@ -352,7 +389,7 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
     # two-row header? the row below holds sub-labels (text, no unit id, no numbers)
     nxt = hdr_row + 1
     nxt_num = any(isinstance(ws.cell(nxt, c).value, (int, float)) for c in range(1, ws.max_column + 1))
-    nxt_unit = bool(_UNIT_RE.match(_s(ws.cell(nxt, 1).value)))
+    nxt_unit = _looks_like_unit(ws.cell(nxt, 1).value)
     nxt_txt = sum(1 for c in range(1, ws.max_column + 1) if re.search(r"[A-Za-z]", _s(ws.cell(nxt, c).value)))
     two_row = (not nxt_num) and (not nxt_unit) and nxt_txt >= 2
 
@@ -428,7 +465,7 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
         # unit header row?  unit-id col matches a real unit id (digit after dash),
         # is NOT a 'Total:' subtotal, and the SQFT cell is numeric
         sqft_val = ws.cell(r, c_sqft).value if c_sqft else None
-        if _UNIT_RE.match(a) and not a.endswith("Total:") and isinstance(sqft_val, (int, float)):
+        if _looks_like_unit(a) and isinstance(sqft_val, (int, float)):
             if cur:
                 units.append(cur)
             plan = cur_plan
@@ -504,9 +541,9 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
     if not totals.get("actual"):
         totals["actual"] = totals.get("scheduled", 0.0)
 
-    return RentRoll(units=units, as_of=as_of, charge_summary=charge_summary,
-                    status_summary=status_summary, footer_unit_mix=footer_mix,
-                    totals=totals)
+    return RentRoll(units=units, as_of=as_of, as_of_date=_to_date(as_of),
+                    charge_summary=charge_summary, status_summary=status_summary,
+                    footer_unit_mix=footer_mix, totals=totals)
 
 
 def _parse_rr_footer(ws) -> tuple:
@@ -692,6 +729,7 @@ class UnitMixRow:
     avg_market: float
     avg_contract: float
     bedbath_source: str = ""
+    hd_names: str = ""            # HelloData (website) floor-plan name(s) for this plan
     # lease-mix / true-market-rent signals
     new_count: int = 0
     renewal_count: int = 0
@@ -710,15 +748,35 @@ class UnitMixRow:
 
 def build_unit_mix(rr: RentRoll, hd: Optional[HelloData],
                    recent_new=None, t90=None, t365=None, t90_prior=None) -> list:
+    ref_date = rr.as_of_date
     if recent_new is None:
-        recent_new = recent_new_leases(rr, 5)
+        recent_new = recent_new_leases(rr, 5, ref_date)
     ref = _hd_ref_date(hd) if hd else None
+    plan_of = _hd_plan_of(rr)                   # join HelloData to RR floor plans by unit #
     if t90 is None:
-        t90 = hellodata_window(hd, ref, 90, 0)
+        t90 = hellodata_window(hd, ref, 90, 0, plan_of)
     if t365 is None:
-        t365 = hellodata_window(hd, ref, 365, 0)
+        t365 = hellodata_window(hd, ref, 365, 0, plan_of)
     if t90_prior is None:                       # the 90-day window one year earlier
-        t90_prior = hellodata_window(hd, ref, 455, 365)
+        t90_prior = hellodata_window(hd, ref, 455, 365, plan_of)
+
+    # HelloData per-RR-plan metadata via the unit-number join: marketing floor-plan
+    # name(s) and bed/bath (used when the rent-roll plan code can't infer them).
+    hd_names, hd_bb = {}, {}
+    if hd:
+        from collections import Counter
+        nm, bb = {}, {}
+        for row in hd.rows:
+            p = plan_of(row)
+            nm.setdefault(p, Counter())[_s(row.get("Floorplan"))] += 1
+            try:
+                bb.setdefault(p, Counter())[(int(float(row.get("Bedrooms"))),
+                                             _bath_num(row.get("Bathrooms")))] += 1
+            except (ValueError, TypeError):
+                pass
+        hd_names = {p: ", ".join(n for n, _ in c.most_common(2) if n) for p, c in nm.items()}
+        hd_bb = {p: c.most_common(1)[0][0] for p, c in bb.items() if c}
+
     groups = {}
     for u in rr.units:
         groups.setdefault(u.floorplan, []).append(u)
@@ -731,13 +789,17 @@ def build_unit_mix(rr: RentRoll, hd: Optional[HelloData],
         markets = [u.market_rent for u in us if u.market_rent]
         contracts = [u.contract_rent for u in us if u.contract_rent > 0]
         bed, bath, src = infer_bed_bath(plan, hd)
-        nc = sum(1 for u in us if classify_lease(u) == "new")
-        rc = sum(1 for u in us if classify_lease(u) == "renewal")
+        if bed is None and plan in hd_bb:        # fall back to HD bed/bath via unit join
+            bed, bath, src = hd_bb[plan][0], hd_bb[plan][1], "HelloData(unit)"
+        nc = sum(1 for u in us if classify_lease(u, ref_date) == "new")
+        rc = sum(1 for u in us if classify_lease(u, ref_date) == "renewal")
         nl = recent_new.get(plan, [])
         nl_rents = [round(u.contract_rent) for u in nl if u.contract_rent > 0]
         avg_nl = (sum(nl_rents) / len(nl_rents)) if nl_rents else 0.0
         bp = _base_plan(plan)
-        t = t90.get(bp, {}); t3 = t365.get(bp, {}); tp = t90_prior.get(bp, {})
+        t = t90.get(plan) or t90.get(bp, {})     # RR-plan key (unit join) else base name
+        t3 = t365.get(plan) or t365.get(bp, {})
+        tp = t90_prior.get(plan) or t90_prior.get(bp, {})
 
         def _yoy(cur, prior):
             return (cur / prior - 1) if (cur and prior) else None
@@ -748,7 +810,7 @@ def build_unit_mix(rr: RentRoll, hd: Optional[HelloData],
             total_sqft=sum(u.sqft for u in us),
             avg_market=(sum(markets) / len(markets)) if markets else 0.0,
             avg_contract=(sum(contracts) / len(contracts)) if contracts else 0.0,
-            bedbath_source=src,
+            bedbath_source=src, hd_names=hd_names.get(plan, ""),
             new_count=nc, renewal_count=rc,
             new_last5_rents=nl_rents, avg_new_last5=avg_nl,
             t90_ask=t.get("ask", 0.0), t90_eff=t.get("eff", 0.0), t90_n=t.get("n", 0),
@@ -782,12 +844,32 @@ def _to_date(v):
     return None
 
 
-def classify_lease(u: RRUnit) -> str:
-    """new  = lease start on/at move-in (first lease)   ·   renewal = lease start after move-in."""
+_NEW_LEASE_MAXAGE = 400          # ~13 months: a move-in newer than this (when lease
+#                                  start is absent) is treated as still on its original
+#                                  (new) lease; older implies a likely renewal.
+
+
+def classify_lease(u: RRUnit, ref_date=None) -> str:
+    """Classify a unit's CURRENT lease:
+      * both dates present  -> new if lease start <= move-in (first lease),
+                               renewal if move-in is older than lease start.
+      * only move-in (no lease start) -> new if the move-in is within ~12 months of
+                               `ref_date` (rent-roll as-of), else renewal (likely
+                               renewed at least once). This is the best we can do
+                               without a lease-start date.
+      * otherwise -> unknown."""
     ls, mi = _to_date(u.lease_start), _to_date(u.move_in)
-    if not ls or not mi:
-        return "unknown"
-    return "renewal" if ls > mi else "new"
+    if ls and mi:
+        return "renewal" if ls > mi else "new"
+    if mi and not ls and ref_date:
+        return "new" if (ref_date - mi).days <= _NEW_LEASE_MAXAGE else "renewal"
+    return "unknown"
+
+
+def _lease_date(u: RRUnit):
+    """The date that best dates the current lease for trend/recency: lease start if
+    present, else move-in (used when the rent roll carries only move-in)."""
+    return _to_date(u.lease_start) or _to_date(u.move_in)
 
 
 def _base_plan(p: str) -> str:
@@ -798,28 +880,47 @@ def _base_plan(p: str) -> str:
     return re.sub(r"\s+", "", m.group(1)).upper() if m else p.upper()
 
 
-def recent_new_leases(rr: RentRoll, n: int = 5) -> dict:
-    """{floorplan -> [RRUnit, ...]} the n most-recently-started NEW leases per plan."""
+def _unit_plan_map(rr: RentRoll) -> dict:
+    """{unit-id -> floorplan} from the rent roll, for joining HelloData by unit number."""
+    return {_s(u.unit): u.floorplan for u in rr.units if _s(u.unit)}
+
+
+def _hd_plan_of(rr: Optional[RentRoll]):
+    """Return a function HD-row -> plan key. Prefer joining HelloData to the rent roll by
+    UNIT NUMBER (so HD's marketing floor-plan names, which need not match the rent roll's
+    internal codes, resolve to the rent roll's floor plan); fall back to the HD floor-plan
+    base name when no unit match (e.g. Canyon Ridge, where the names already align)."""
+    umap = _unit_plan_map(rr) if rr else {}
+
+    def plan_of(row):
+        p = umap.get(_s(row.get("Unit")))
+        return p if p else _base_plan(row.get("Floorplan", ""))
+    return plan_of
+
+
+def recent_new_leases(rr: RentRoll, n: int = 5, ref_date=None) -> dict:
+    """{floorplan -> [RRUnit, ...]} the n most-recent NEW leases per plan."""
+    ref_date = ref_date or rr.as_of_date
     by_plan = {}
     for u in rr.units:
-        if classify_lease(u) != "new" or not _to_date(u.lease_start):
+        if classify_lease(u, ref_date) != "new" or not _lease_date(u):
             continue
         by_plan.setdefault(u.floorplan, []).append(u)
     out = {}
     for plan, us in by_plan.items():
-        us.sort(key=lambda u: _to_date(u.lease_start), reverse=True)
+        us.sort(key=lambda u: _lease_date(u), reverse=True)
         out[plan] = us[:n]
     return out
 
 
-def new_lease_t90(rr: RentRoll, days: int = 90) -> float:
-    """Avg contract rent of NEW leases signed in the trailing `days`, anchored on the
-    most recent new-lease start in the rent roll. The preferred 'true market rent' read
-    alongside HelloData executed asking."""
+def new_lease_t90(rr: RentRoll, days: int = 90, ref_date=None) -> float:
+    """Avg contract rent of NEW leases dated in the trailing `days`, anchored on the most
+    recent new lease. The preferred 'true market rent' read alongside HelloData."""
+    ref_date = ref_date or rr.as_of_date
     pts = []
     for u in rr.units:
-        if classify_lease(u) == "new":
-            d = _to_date(u.lease_start)
+        if classify_lease(u, ref_date) == "new":
+            d = _lease_date(u)
             if d and u.contract_rent > 0:
                 pts.append((d, u.contract_rent))
     if not pts:
@@ -838,14 +939,17 @@ def _hd_ref_date(hd):
     return max(ds) if ds else _dt.date.today()
 
 
-def hellodata_window(hd, ref_date, older_days, newer_days=0) -> dict:
-    """{base_plan -> {'ask','eff','n'}} averaged over leases that went OFF market
-    (executed) in the window [ref-older_days, ref-newer_days]. T90 = window(90,0);
-    T365 = window(365,0); the year-ago T90 = window(455,365)."""
+def hellodata_window(hd, ref_date, older_days, newer_days=0, plan_of=None) -> dict:
+    """{plan -> {'ask','eff','n'}} averaged over leases that went OFF market (executed)
+    in the window [ref-older_days, ref-newer_days]. T90 = window(90,0); T365 =
+    window(365,0); the year-ago T90 = window(455,365). `plan_of` maps an HD row to a
+    plan key (defaults to the HD floor-plan base name)."""
     if hd is None:
         return {}
     if ref_date is None:
         ref_date = _hd_ref_date(hd)
+    if plan_of is None:
+        plan_of = lambda row: _base_plan(row.get("Floorplan", ""))
     acc = {}
     for r in hd.rows:
         od = _to_date(r.get("Off Market Date"))
@@ -854,7 +958,7 @@ def hellodata_window(hd, ref_date, older_days, newer_days=0) -> dict:
         age = (ref_date - od).days
         if not (newer_days <= age <= older_days):
             continue
-        bp = _base_plan(r.get("Floorplan", ""))
+        bp = plan_of(r)
         d = acc.setdefault(bp, {"ask": [], "eff": []})
         for fld, key in (("Last Asking Rent", "ask"), ("Last Effective Rent", "eff")):
             try:
@@ -1355,22 +1459,30 @@ def _quarter(d):
 
 
 def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
-    recent = recent_new_leases(rr, 5)
-    t90 = hellodata_t90(hd)
+    ref_date = rr.as_of_date
+    recent = recent_new_leases(rr, 5, ref_date)
+    plan_of = _hd_plan_of(rr)        # HelloData -> RR floor plan via unit-number join
+    umap = _unit_plan_map(rr)
+    join_active = bool(hd) and sum(1 for r in hd.rows if umap.get(_s(r.get("Unit")))) \
+        >= 0.3 * max(1, len(hd.rows))
+    # weight key must match plan_of's output: RR floor plan when the unit join is live,
+    # else the HelloData base-plan name (Canyon Ridge, where they already align)
+    def rr_key(u):
+        return u.floorplan if join_active else _base_plan(u.floorplan)
     weights = {}
     for u in rr.units:
-        bp = _base_plan(u.floorplan)
-        weights[bp] = weights.get(bp, 0) + 1
+        k = rr_key(u); weights[k] = weights.get(k, 0) + 1
+    t90 = hellodata_window(hd, _hd_ref_date(hd) if hd else None, 90, 0, plan_of)
 
     months = set()
-    hd_pm = {}                       # (y,m,bp) -> {'ask':[],'eff':[]}
+    hd_pm = {}                       # (y,m,plan) -> {'ask':[],'eff':[]}
     if hd:
         for r in hd.rows:
             od = _to_date(r.get("Off Market Date"))
             if not od:
                 continue
             ym = (od.year, od.month); months.add(ym)
-            bp = _base_plan(r.get("Floorplan", ""))
+            bp = plan_of(r)
             cell = hd_pm.setdefault((ym, bp), {"ask": [], "eff": []})
             for fld, key in (("Last Asking Rent", "ask"), ("Last Effective Rent", "eff")):
                 try:
@@ -1396,15 +1508,15 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData]) -> LeaseTrend:
         hd_conc[ym] = (1 - e / a) if (a > 0 and e > 0) else 0.0
         hd_n[ym] = cnt
 
-    new_pm, new_cnt = {}, {}          # (ym,bp) -> [contract rents] ; ym -> count
+    new_pm, new_cnt = {}, {}          # (ym,plan) -> [contract rents] ; ym -> count
     for u in rr.units:
-        if classify_lease(u) != "new":
+        if classify_lease(u, ref_date) != "new":
             continue
-        d = _to_date(u.lease_start)
+        d = _lease_date(u)
         if not d or u.contract_rent <= 0:
             continue
         ym = (d.year, d.month); months.add(ym)
-        new_pm.setdefault((ym, _base_plan(u.floorplan)), []).append(u.contract_rent)
+        new_pm.setdefault((ym, rr_key(u)), []).append(u.contract_rent)
         new_cnt[ym] = new_cnt.get(ym, 0) + 1
     new_rent, new_n = {}, {}
     for ym in {k[0] for k in new_pm}:

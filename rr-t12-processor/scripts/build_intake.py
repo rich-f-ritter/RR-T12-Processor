@@ -430,9 +430,9 @@ def write_unit_mix_block(ws, mix, has_hd, r0, c0):
            "Avg Market Rent\n(per RR — not a\nmkt signal)", "Avg Contract\nRent", "New\nLeases", "Renew\nLeases",
            "Avg New-Lease\n(last 5)", "New #1", "New #2", "New #3", "New #4", "New #5",
            "HD T90\nAsking", "HD T90\nEffective", "HD T365\nAsking", "HD T365\nEffective",
-           "HD90 YoY\nAsking", "HD90 YoY\nEffective", "Bed/Bath\nSrc"]
+           "HD90 YoY\nAsking", "HD90 YoY\nEffective", "Bed/Bath\nSrc", "HD Plan\n(website)"]
     # j: 0 plan,1 bed,2 bath,3 units,4 occ,5 vac,6 avgSF,7 avgMkt,8 avgCon,9 new,10 ren,
-    # 11 avgNew5,12-16 new1-5,17 t90ask,18 t90eff,19 t365ask,20 t365eff,21 yoyAsk,22 yoyEff,23 src
+    # 11 avgNew5,12-16 new1-5,17 t90ask,18 t90eff,19 t365ask,20 t365eff,21 yoyAsk,22 yoyEff,23 src,24 HDname
     _set(ws, r0, c0, "UNIT MIX  \u2014  mix-weighted market-rent indicators",
          font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
     for j in range(1, len(hdr)):
@@ -472,6 +472,7 @@ def write_unit_mix_block(ws, mix, has_hd, r0, c0):
             put(21, m.yoy_ask if m.yoy_ask is not None else None, fmt=PCT, align="right")
             put(22, m.yoy_eff if m.yoy_eff is not None else None, fmt=PCT, align="right")
         put(23, m.bedbath_source, font=_f(color=GREY, size=9), align="center")
+        put(24, m.hd_names or None, font=_f(color=NAVY, size=9), align="left")
         r += 1
 
     # totals (mix-weighted, computed in Python so blanks/None are handled cleanly)
@@ -970,9 +971,7 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None, charg
     stmt_asof = (st.month_labels[-1] if st.month_labels else "n/a")
     if not prop_name:
         prop_name = (st.title or os.path.splitext(os.path.basename(rr_path))[0]).strip()
-    recent_new = il.recent_new_leases(rr, 5)
-    t90 = il.hellodata_t90(hd)
-    mix = il.build_unit_mix(rr, hd, recent_new, t90)
+    mix = il.build_unit_mix(rr, hd)   # joins HelloData by unit #, uses RR as-of for new/renewal
     rec = il.reconcile(st, rr)
     tr = il.build_trends(st, rr)
     lt = il.build_lease_trend(rr, hd)

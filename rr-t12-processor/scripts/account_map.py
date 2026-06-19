@@ -251,6 +251,25 @@ def _override(name):
     return None
 
 
+def _rev_adjustment(n):
+    """Revenue-side line-name classifier for the rent adjustments + RUBS that should
+    NOT be swept into Rental Income by a broad parent section. Returns a code or None.
+    Order matters: non-revenue/bad-debt before plain 'vacancy'; reimbursements last."""
+    if re.search(r"loss to lease|gain to lease|loss/gain|gain/loss|loss to old lease|"
+                 r"market (loss|gain)", n):                                       return "ltl"
+    if re.search(r"non.?revenue|employee unit|model (&|and|/)?\s*storage|model unit|"
+                 r"storage unit|down unit|admin unit|staff unit|office unit|mgr unit", n): return "nr"
+    if re.search(r"bad debt|write.?off|collection loss|uncollect|skip", n):       return "cl"
+    if re.search(r"concession|free rent", n):                                     return "conc"
+    if re.search(r"vacanc|loss to vacancy", n):                                   return "vac"
+    # RUBS / utility reimbursements (Yardi often calls these "Rebill")
+    if re.search(r"(water|sewer).*(rebill|reimb|recover|rubs)|rubs.*(water|sewer)", n): return "RWS"
+    if re.search(r"trash.*(rebill|reimb|recover|rubs|pickup)|valet.*trash|rubs.*trash", n): return "RT"
+    if re.search(r"(electric|gas|pest|utility|util).*(rebill|reimb|recover)|"
+                 r"utility reimbursement|rubs", n):                               return "RF"
+    return None
+
+
 def categorize_t12_line(name, side, section_hint=None, acct_number=None):
     """Best-guess standardized code for a raw T12 line item.
 
@@ -263,6 +282,15 @@ def categorize_t12_line(name, side, section_hint=None, acct_number=None):
     if ov:
         return ov
     n = (name or "").strip().lower()
+    # NAME-FIRST revenue adjustments. Operators often nest vacancy, concessions,
+    # loss-to-lease, bad debt, non-revenue units and RUBS reimbursements UNDER a
+    # broad "Rental Income" / "Other Rental Income" parent, so the section family
+    # would wrongly pull them into Rentinc. The line name is the reliable signal
+    # for these, so resolve them before falling back to section logic.
+    if side == "rev":
+        radj = _rev_adjustment(n)
+        if radj:
+            return radj
     fam = _family_from_section(section_hint)
     if fam == "payroll":     return _split_payroll(n)
     if fam == "marketing":   return "adv"

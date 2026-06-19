@@ -27,12 +27,19 @@ the underwriting model. Deep submarket comp work belongs to
    Prefer the **most detailed** versions (separate GL lines for concessions,
    loss-to-lease, RUBS, payroll burden, insurance); a summary statement still reconciles
    at EGR/Opex/NOI but flattens those sub-codes to zero for the months it owns.
-2. **Rent roll** (.xlsx) — native export, as-of a recent month. Use the **newest** if
-   several are provided. Must carry **lease start** and **move-in** dates (used to split
-   new vs renewal leases).
+2. **Rent roll** (.xlsx) — native export (Yardi/CBREI/RealPage/Entrata), as-of a recent
+   month. Use the **newest** if several are provided. Carries **move-in** and ideally
+   **lease start** dates (used to split new vs renewal — see *New vs renewal*); the parser
+   auto-detects the column layout (incl. two-row headers) and the unit-id format.
 3. **HelloData "Unit Details" CSV** *(optional)* — supplies clean bed/bath, the **T90
-   executed** market-rent indicator per floor plan, and the quarterly market-rent trend.
-   Also feeds the model's `HD Dump`.
+   executed** market-rent indicator per floor plan, and the monthly market-rent trend.
+   It is joined to the rent roll **by unit number**, so HelloData's marketing floor-plan
+   names need not match the rent roll's internal plan codes (the website names are also
+   shown on the unit mix). Also feeds the model's `HD Dump`.
+4. **Charge-code lookup** (.xlsx) *(optional, `--charge-codes`)* — for rent rolls that bill
+   by **numeric operator code** rather than a name (e.g. CBREI/Yardi). A sheet with
+   Account / Name / Type columns; the parser decodes each charge to its name so it
+   categorizes correctly. Not needed when the rent roll already names its charges.
 
 State which files you used and the operating period they cover.
 
@@ -99,7 +106,7 @@ underwriting actually trusts; renewals are excluded.
 python3 <skill_dir>/scripts/build_intake.py \
   --t12 "<statement1.xlsx>" ["<statement2.xlsx>" ...] \
   --rr  "<RentRoll.xlsx>" \
-  [--hd "<hello.csv>"] [--name "Property Name"] \
+  [--hd "<hello.csv>"] [--charge-codes "<lease_charge_codes.xlsx>"] [--name "Property Name"] \
   --out /home/claude/<Property>__Underwriting_Intake.xlsx
 ```
 
