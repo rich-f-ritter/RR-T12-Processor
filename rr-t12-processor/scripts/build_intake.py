@@ -830,7 +830,7 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
     nfiles = len(st.files)
     span = f"{st.month_labels[0]} – {st.month_labels[-1]} ({st.n_months} mo" \
            + (f", {nfiles} statements stitched" if nfiles > 1 else "") + ")"
-    _set(ws, 2, 1, f"Generated {_dt.date.today():%B %d, %Y}  ·  RedIQ-replacement intake  ·  Operating period {span}",
+    _set(ws, 2, 1, f"Generated {_dt.date.today():%B %d, %Y}  ·  RR-T12 Processor intake  ·  Operating period {span}",
          font=_f(color=GREY, italic=True))
     _set(ws, 3, 1, f"Data vintage  ·  Rent roll as-of {rr_asof}  ·  Latest financial statement thru {stmt_asof}",
          font=_f(color=GREY, italic=True))

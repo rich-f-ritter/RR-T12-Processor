@@ -1,7 +1,8 @@
 # RR-T12-Processor
 
-Development home for the **`rediq-replacement`** Claude skill — a RedIQ replacement
-for multifamily underwriting intake. It turns raw operating statements (T12s /
+Development home for the **`rr-t12-processor`** Claude skill (display name
+"RR-T12 Processor") — a RedIQ replacement for multifamily underwriting intake.
+It turns raw operating statements (T12s /
 monthlies) and a rent roll into a standardized, editable chart of accounts, a
 stitched multi-period operating history, a one-lined rent roll, an enhanced unit
 mix, lease-trend analysis, and a rent-roll-to-T12 reconciliation — all paste-ready
@@ -14,7 +15,7 @@ Claude app (where it runs against the public `xlsx` recalc helper and the siblin
 ## Layout
 
 ```
-rediq-replacement/          ← the shippable skill (this is what gets packaged)
+rr-t12-processor/           ← the shippable skill (this is what gets packaged)
   SKILL.md
   references/               ← account_mapping.md, model_paste_targets.md
   scripts/                  ← account_map.py, intake_lib.py, build_intake.py
@@ -57,7 +58,7 @@ reproduces the golden's LibreOffice-computed values exactly (~21k cells, <1s).
 
 ## Packaging for the Claude app
 
-The skill ships as the `rediq-replacement/` directory only. The `dev/` harness,
+The skill ships as the `rr-t12-processor/` directory only. The `dev/` harness,
 fixtures, and golden output stay in the repo and are not part of the package.
 
 See `dev/testdata/README.md` for which input fixtures the harness expects and what

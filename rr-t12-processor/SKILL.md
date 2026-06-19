@@ -1,9 +1,9 @@
 ---
-name: rediq-replacement
-description: "Replicate and improve on RedIQ for multifamily underwriting intake — turn one or more raw operating statements (T12s/monthlies) and a rent roll into a standardized, EDITABLE chart of accounts plus a stitched multi-period operating history, one-lined rent roll, enhanced unit mix (new-lease + HelloData T90 market-rent indicators), lease-trend/seasonality analysis, and a rent-roll-to-T12 reconciliation with AGPR tie-out — all paste-ready for the TMG acquisition model. Use whenever the user uploads T12s/operating statements and/or a rent roll and wants them standardized, categorized, stitched, one-lined, or reconciled (the work RedIQ does before underwriting). Trigger on: 'run RedIQ', 'replace RedIQ', 'standardize this T12', 'stitch these statements', 'categorize the operating statement', 'one-line the rent roll', 'unit mix', 'reconcile rent roll to T12', 'underwriting intake', or an uploaded Yardi/RealPage/Entrata statement + rent roll. Produces the intake workbook only; does NOT populate the model."
+name: rr-t12-processor
+description: "RR-T12 Processor — replicate and improve on RedIQ for multifamily underwriting intake — turn one or more raw operating statements (T12s/monthlies) and a rent roll into a standardized, EDITABLE chart of accounts plus a stitched multi-period operating history, one-lined rent roll, enhanced unit mix (new-lease + HelloData T90 market-rent indicators), lease-trend/seasonality analysis, and a rent-roll-to-T12 reconciliation with AGPR tie-out — all paste-ready for the TMG acquisition model. Use whenever the user uploads T12s/operating statements and/or a rent roll and wants them standardized, categorized, stitched, one-lined, or reconciled (the work RedIQ does before underwriting). Trigger on: 'run RedIQ', 'replace RedIQ', 'standardize this T12', 'stitch these statements', 'categorize the operating statement', 'one-line the rent roll', 'unit mix', 'reconcile rent roll to T12', 'underwriting intake', or an uploaded Yardi/RealPage/Entrata statement + rent roll. Produces the intake workbook only; does NOT populate the model."
 ---
 
-# RedIQ Replacement — Underwriting Intake
+# RR-T12 Processor — Underwriting Intake
 
 Turn raw operating statements and a rent roll into the standardized, paste-ready inputs
 an analyst needs to start underwriting — the job RedIQ does, but with the full statement

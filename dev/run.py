@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dev/run.py — one-command build + recalc for the rediq-replacement skill.
+dev/run.py — one-command build + recalc for the rr-t12-processor skill.
 
 Builds the intake workbook from the Canyon Ridge fixtures (or any files you
 pass through), then runs the mandatory recalc step exactly as the skill spec
@@ -22,7 +22,7 @@ import argparse, os, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKILL = ROOT / "rediq-replacement"
+SKILL = ROOT / "rr-t12-processor"
 TESTDATA = ROOT / "dev" / "testdata"
 OUT = ROOT / "dev" / "out"
 sys.path.insert(0, str(ROOT / "dev"))
