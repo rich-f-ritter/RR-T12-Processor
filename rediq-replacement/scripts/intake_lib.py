@@ -50,6 +50,11 @@ def _s(v):
     return "" if v is None else str(v).strip()
 
 
+def _is_glnum(s):
+    """True if a string looks like a bare GL account number (e.g. '4001', '6504')."""
+    return bool(re.fullmatch(r"\d{3,6}(?:\.\d+)?", _s(s)))
+
+
 def _is_date(v):
     return isinstance(v, (_dt.datetime, _dt.date))
 
@@ -182,13 +187,28 @@ def parse_t12(path: str) -> T12:
 
     rows, cur_section = [], ""
     for r in range(hdr_row + 1, ws.max_row + 1):
-        name = _s(ws.cell(r, 1).value)
-        if not name or name == "None":
+        colA = _s(ws.cell(r, 1).value)
+        if not colA or colA == "None":
             continue
-        acct = _s(ws.cell(r, acct_col).value)
+        other = _s(ws.cell(r, acct_col).value)
         vals = [_num(ws.cell(r, c).value) for c in month_cols]
         has_vals = any(abs(v) > 1e-9 for v in vals)
-        is_line = bool(acct) and acct.lower() != "none"
+
+        # The line label and the GL account number live in two columns whose ORDER
+        # varies by export (some put the number in col A and the description in the
+        # account column; others reverse it). Normalize so `name` is always the
+        # human-readable description and `gl` is always the account number — this
+        # keeps categorization (keyword-driven, needs the description) and stitching
+        # (merges across statements by GL number) correct regardless of layout.
+        if _is_glnum(colA):
+            name, gl = other, colA
+        elif _is_glnum(other):
+            name, gl = colA, other
+        else:
+            name, gl = colA, ""
+        is_line = bool(gl) or (bool(other) and other.lower() != "none")
+        if not name:
+            name = colA
 
         if not is_line:
             # header (no values) vs subtotal (has values)
@@ -202,12 +222,12 @@ def parse_t12(path: str) -> T12:
 
         # real postable line
         gltype = _s(ws.cell(r, gltype_col).value) if gltype_col else ""
-        if _REV_SECTIONS.search(cur_section) or acct.startswith("4") or gltype.startswith("4"):
+        if _REV_SECTIONS.search(cur_section) or gl.startswith("4") or gltype.startswith("4"):
             side = "rev"
         else:
             side = "exp"
-        code = am.categorize_t12_line(name, side, cur_section, acct)
-        rows.append(T12Row("line", name, cur_section, side, acct, code,
+        code = am.categorize_t12_line(name, side, cur_section, gl)
+        rows.append(T12Row("line", name, cur_section, side, gl, code,
                            vals, sum(vals)))
 
     return T12(months=months, rows=rows, sheet_name=ws.title, title=title)
@@ -1083,13 +1103,18 @@ def unified_lines(st: Stitched):
     appears once, with values across the full union of months sourced from the owning
     (freshest) statement for each month. Same-named lines within a statement are summed,
     so a SUMIFS by code over the result reproduces the resolved per-code series exactly."""
-    # first-appearance order (richest statement first), keyed by (code, normalized name)
+    # first-appearance order (richest statement first). Lines are merged across
+    # statements by GL account number when present (robust to differing descriptions
+    # or name/number column layouts), else by normalized name.
+    def _merge_key(row):
+        return ("gl:" + row.acct) if getattr(row, "acct", "") else ("nm:" + _line_key(row.name))
+
     order, info = [], {}
     for f in sorted(st.files, key=lambda f: -f.detail):
         for row in f.t12.rows:
             if row.rtype != "line":
                 continue
-            key = (row.code, _line_key(row.name))
+            key = _merge_key(row)
             if key not in info:
                 side = _side_of_code(row.code,
                                      row.side if getattr(row, "side", "") in ("revenue", "expense") else "unknown")
@@ -1104,7 +1129,7 @@ def unified_lines(st: Stitched):
         for row in f.t12.rows:
             if row.rtype != "line":
                 continue
-            key = (row.code, _line_key(row.name))
+            key = _merge_key(row)
             arr = d.setdefault(key, [0.0] * nm)
             for j in range(nm):
                 arr[j] += row.values[j] if j < len(row.values) else 0.0
