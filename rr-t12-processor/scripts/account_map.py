@@ -102,6 +102,10 @@ def _family_from_section(section_hint):
     s = (section_hint or "").strip().lower()
     if not s:
         return None
+    # Hierarchical T12s use a parent GL line as the section header
+    # ("54005-000 - Ad Performance Fees"); strip the leading account number so the
+    # family keywords below see the real label.
+    s = re.sub(r"^\s*\d{3,}[-_]\d+\s*[-–—:]+\s*", "", s)
     # NON-OPERATING sections first: debt service, depreciation/amortization, and the
     # partnership/owner/non-operating buckets. RedIQ excludes these from NOI, so they
     # must land in the non-op codes (intex/prin/depex/icd/onoe), never operating G&A.
@@ -112,7 +116,8 @@ def _family_from_section(section_hint):
     if re.search(r"non.?operating|partnership|owner (expense|draw|distribution)|"
                  r"owner['’]s", s):                                               return "nonop"
     if re.search(r"payroll|personnel|salaries|compensation|labor", s):           return "payroll"
-    if re.search(r"advertis|marketing", s):                                       return "marketing"
+    if re.search(r"advertis|marketing|ad performance|property website|online presence|"
+                 r"search engine|internet listing|\bils\b|locator|leasing.*marketing", s): return "marketing"
     if re.search(r"general.*admin|administ|g\s*&\s*a|g/a|office", s):             return "admin"
     if re.search(r"utilit", s):                                                   return "utilities"
     if re.search(r"make[\s\-/]*ready|redecorat", s):                             return "makeready"

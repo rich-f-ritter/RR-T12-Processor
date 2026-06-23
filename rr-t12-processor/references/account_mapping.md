@@ -92,6 +92,31 @@ Signs come straight from the GL — the rollup is a plain `SUM`, never re-signed
 - **Late Fees**: if the line sits in the *Other Income* section it is revenue → `OI`.
   RedIQ sometimes buckets it to `GA`; the editable column lets you match house style.
 
+## RedIQ cross-check learnings (The Preserve, Jun 2026)
+Validated a full build against the operator's own **RedIQ** Operating Statement (same
+standardized A1:Q77 code template the OS Summary uses). **NOI tied to the dollar
+($5,695,294)**; 140 GL lines shared, ~81% coded identically. The divergences were all
+NOI-neutral reclassifications and surfaced these lessons:
+- **Marketing GL block `54xxx` → `adv` (FIXED).** Hierarchical T12s put a parent GL line
+  in the section column ("54005-000 - Ad Performance Fees", "54025-000 - Property
+  Website"); `_family_from_section` now strips the account prefix and recognizes
+  marketing parent-sections (ad performance, property website, online presence, search
+  engine, internet listing/ILS, locator). Fixed 8 lines / ~$64k that had scattered into
+  `PB`/`GA` (incl. "Search Engine Marketing" → `PB`). `adv` now matches RedIQ exactly.
+- **RedIQ's `UF` is a utilities catch-all (OPEN — house-style choice).** RedIQ folds
+  common-area & vacant-unit electric, internet access, and cable-TV contract into `UF`
+  (Utilities Fees). This skill splits them into `UC` (common), `GA` (internet), and
+  `cont` (cable). Both tie at NOI; the editable code column lets you match RedIQ if
+  preferred. (~$66k of reclass across `UF`/`UC`/`GA`/`cont` on this deal.)
+- **Utility-rebill *reimbursement* → `RF`, not `UF`.** The rebill *service fee* (cost) is
+  `UF`, but a line titled a "…Service Fee **Reimbursement**" is the resident **recovery**
+  → RedIQ codes it `RF` (RUBS revenue, grossed up). This skill currently nets it into
+  `UF`; refine if matching RedIQ. NOI-neutral.
+- **"Centralization Fees" / "Contract Staffing" → `PB`** in RedIQ (payroll burden), where
+  this skill reads them as base `Pay`. Minor; arguable.
+- **Month-to-Month premiums:** RedIQ booked these to `OI` here, not `Rentinc` — counter to
+  the quirk note above. Operator-dependent; low-dollar.
+
 ## Detailed vs. summary T12
 A **detailed** T12 has separate GL lines for concessions, loss-to-lease, RUBS fees,
 parking, payroll burden/bonuses, insurance, etc. — the categorizer separates each
