@@ -1149,6 +1149,7 @@ class Reconciliation:
     correlations: list = field(default_factory=list)   # list[(label, detail_str)]
     noi_tie: list = field(default_factory=list)        # list[dict] per statement (see reconcile_noi)
     hd_fee_netting: dict = field(default_factory=dict)  # HD asking gross→net disclosure (see build())
+    charge_t12: list = field(default_factory=list)      # empirical charge→T12 placement (see match_charges_to_t12)
 
 
 def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
@@ -1191,14 +1192,23 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
                 "new-lease contract rents + HelloData executed asking; see the unit mix and Lease "
                 "Trend tabs. Shown here only as a data-integrity check that the two files describe "
                 "the same property/period.")
+    # Label adapts to the data: only call out "incl. amenity rent" when the rent roll
+    # actually carries amenity rent that rolls into contract rent (it doesn't, e.g., at Aura,
+    # where the only "amenity" item is a $10 amenity FEE booked as Other Income \u2014 not rent).
+    has_amen = amenity > 0
+    clabel = ("Contract Rent incl. amenity rent (occupied), monthly" if has_amen
+              else "Contract Rent (occupied), monthly")
+    cnote = ("RR contract (Rent + amenity rent) \u2194 T12 contract net of vacancy "
+             "(Rentinc+LtL+Vac+NonRev)" if has_amen else
+             "RR contract rent \u2194 T12 contract net of vacancy (Rentinc+LtL+Vac+NonRev)")
+    agpr_note = "RR contract \u00d712 \u2194 T12 latest-month AGPR \u00d712 (Rentinc+LtL)."
+    if has_amen:
+        agpr_note += (" Amenity rent is IN contract rent \u2014 it is not a separate T12 line, "
+                      "and including it ties RR contract closer to AGPR.")
     lines = [
         ReconLine("Gross Market Rent (asking), monthly", rr_market, rentinc, mkt_note),
-        ReconLine("Contract Rent incl. amenity (occupied), monthly", rr_contract, econ_contract,
-                  "RR contract (Rent+Amenity) \u2194 T12 contract net of vacancy (Rentinc+LtL+Vac+NonRev)"),
-        ReconLine("T1 AGPR, annualized", rr_contract * 12, agpr_t1 * 12,
-                  "RR contract \u00d712 \u2194 T12 latest-month AGPR \u00d712 (Rentinc+LtL). Amenity rent is IN "
-                  "contract rent \u2014 it is not a separate T12 line, and including it ties RR contract "
-                  "closer to AGPR."),
+        ReconLine(clabel, rr_contract, econ_contract, cnote),
+        ReconLine("T1 AGPR, annualized", rr_contract * 12, agpr_t1 * 12, agpr_note),
         ReconLine("Other Income (recurring), monthly", rr_other,
                   t12.code_total("OI", midx) + t12.code_total("park", midx)
                   + t12.code_total("RF", midx) + t12.code_total("RT", midx)
@@ -1303,6 +1313,151 @@ def reconcile_noi(st):
                     "rep_rev": rep["rev"], "comp_rev": comp_rev,
                     "rep_opex": rep["opex"], "comp_opex": comp_opex})
     return out
+
+
+def match_charges_to_t12(st, rr, tol=0.25):
+    """Empirically determine where each rent-roll charge LANDS on the T12 — by matching the
+    charge's monthly $ (and, where the code is mnemonic, its name) to an actual T12 line —
+    and classify it from WHERE IT TIES, not from the charge name alone.
+
+    Buckets: 'contract' (ties to a Rental Income / Potential Rent line) | 'other_income'
+    (ties to an Other Income line) | 'rubs_recovery' (ties to a utility/RUBS rebill, which
+    operators book on the EXPENSE side as a contra-expense — so we search both sides) |
+    'unmatched' (no T12 line within tolerance — flag it). The base contract-rent charge is
+    contract by definition (it ties to the whole Rental Income section, not one line).
+
+    Each result carries the matched T12 line, the empirical bucket, the name-heuristic
+    verdict (categorize_charge), and whether the two AGREE — disagreements are surfaced on
+    the Reconciliation tab so the contract-rent determination can be audited."""
+    if not st.files:
+        return []
+    latest = max(st.files, key=lambda f: (f.monthkeys[-1] if f.monthkeys else (0, 0)))
+    t12 = latest.t12
+    n = t12.n_months
+    last12 = list(range(max(0, n - 12), n)) or [0]
+    # Candidates = where a RESIDENT charge could legitimately land: any revenue line, or a
+    # genuine rebill/recovery on the expense side (RUBS — booked as a contra-expense). Plain
+    # expense lines (Sewer, Alarms, Telephone, …) are costs, not resident charges, so they
+    # are excluded — otherwise small charges find coincidental same-magnitude expense matches.
+    _REC_CODES = {"RF", "RT", "RWS", "RUBS"}
+    _REC_RE = re.compile(r"rebill|recover|recaptur|reimburs|rubs", re.I)
+    cand = []
+    for row in t12.rows:
+        if row.rtype != "line":
+            continue
+        vals = [row.values[i] for i in last12 if i < len(row.values)]
+        avg = sum(vals) / len(vals) if vals else 0.0
+        if abs(avg) < 1:
+            continue
+        is_recovery = (row.code in _REC_CODES) or bool(_REC_RE.search(row.name))
+        if row.side == "rev":
+            kind = "rev"
+        elif row.side == "exp" and is_recovery:
+            kind = "rec"
+        else:
+            continue
+        cand.append({"name": row.name, "section": row.section or "", "side": row.side,
+                     "kind": kind, "code": row.code, "avg": avg})
+
+    tot = {}
+    for u in rr.units:
+        for cc, amt in u.charges.items():
+            tot[cc] = tot.get(cc, 0.0) + amt
+    base_cc, base_amt = None, 0.0
+    for cc, amt in tot.items():
+        _code, isc, _r = am.categorize_charge(cc)
+        if isc and amt > base_amt:
+            base_cc, base_amt = cc, amt
+
+    def name_sim(cc, name):
+        c = re.sub(r"[^a-z]", "", cc.lower())
+        best = 0
+        for w in re.findall(r"[a-z]+", name.lower()):
+            k = 0
+            for a, b in zip(c, w):
+                if a == b:
+                    k += 1
+                else:
+                    break
+            if k >= 3:
+                best = max(best, k)
+        return best
+
+    _REC_CODE_SET = {"RF", "RT", "RWS", "RUBS"}
+
+    def heuristic_bucket(code, isc):
+        if isc:
+            return "contract"
+        return "rubs_recovery" if code in _REC_CODE_SET else "other_income"
+
+    rows = []
+    for cc, amt in sorted(tot.items(), key=lambda kv: -abs(kv[1])):
+        if abs(amt) < 5:          # ignore charge-code list entries with no current $
+            continue
+        code, isc, _r = am.categorize_charge(cc)
+        if cc == base_cc:
+            rows.append({"cc": cc, "amt": amt, "code": code, "match": None,
+                         "bucket": "contract", "conf": "high", "name_contract": True,
+                         "agrees": True,
+                         "note": "Base contract rent — ties to the T12 Rental Income section."})
+            continue
+        scored = []
+        for c in cand:
+            denom = max(abs(amt), abs(c["avg"]), 1.0)
+            # Revenue lines must match by SIGN (a positive resident charge is not a negative
+            # contra-revenue adjustment like Vacancy/Models). Recoveries may be booked +/-,
+            # so they match on magnitude.
+            rel = (abs(abs(amt) - abs(c["avg"])) if c["kind"] == "rec"
+                   else abs(amt - c["avg"])) / denom
+            sim = name_sim(cc, c["name"])
+            scored.append((rel - 0.10 * sim, rel, sim, c))
+        scored.sort(key=lambda x: x[0])
+        best = scored[0] if scored else None
+        # A match only OVERRIDES the name categorization when the evidence is STRONG: a very
+        # tight amount tie, or a decent amount tie corroborated by the line name. A merely
+        # coincidental same-magnitude match (no name support) is NOT enough to flip a charge —
+        # a charge folded into Rental Income (e.g. amenity rent) has no distinct T12 line and
+        # would otherwise grab an unrelated OI line of similar size. In the weak/no-match case
+        # we DEFER to the categorization rather than contradict it.
+        strong = bool(best) and best[1] <= tol and (best[1] <= 0.05 or best[2] >= 3)
+        if strong:
+            _s, rel, sim, c = best
+            sect = c["section"].upper()
+            if c["kind"] == "rec":
+                bucket = "rubs_recovery"
+            elif "OTHER INCOME" in sect or c["code"] in ("OI", "park", "cable"):
+                bucket = "other_income"
+            else:
+                bucket = "contract"
+            match, conf = c, ("high" if (rel <= 0.05 and sim >= 3) or rel <= 0.03 else "med")
+        else:
+            bucket = heuristic_bucket(code, isc)
+            match, conf, rel = None, "low", None
+
+        emp_contract = (bucket == "contract")
+        agrees = (emp_contract == isc) if strong else None
+        if strong and bucket == "rubs_recovery":
+            where = f"T12 '{match['name']}'" if best[2] >= 3 else "the T12's RUBS/utility-rebill block"
+            note = (f"Ties to {where} (~{match['avg']:,.0f}/mo, booked as a contra-expense) — "
+                    f"a resident recovery, not contract rent.")
+        elif strong:
+            note = (f"Ties to T12 '{match['name']}' ({match['avg']:,.0f}/mo, "
+                    f"{match['section'].title() or 'revenue'}); {rel*100:.0f}% from "
+                    f"rent-roll {amt:,.0f}/mo.")
+        elif isc:
+            note = ("No distinct T12 line within tolerance — consistent with being folded into "
+                    "Rental Income / contract rent (per the charge categorization).")
+        else:
+            note = (f"No T12 income/rebill line ties to {amt:,.0f}/mo — treated as "
+                    f"{'a utility recovery' if bucket=='rubs_recovery' else 'other income / pass-through'} "
+                    f"(per the charge categorization).")
+        if agrees is False:
+            note += (f"  ⚠ Categorization calls this {'contract rent' if isc else 'non-contract'}, "
+                     f"but the T12 placement says {'contract rent' if emp_contract else 'NOT contract rent'} "
+                     f"— review the Code column.")
+        rows.append({"cc": cc, "amt": amt, "code": code, "match": match, "bucket": bucket,
+                     "conf": conf, "name_contract": isc, "agrees": agrees, "note": note})
+    return rows
 
 
 # ===========================================================================

@@ -811,6 +811,42 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
              font=_f(bold=True, color=("008000" if isc else "C00000")), align="center")
         r += 1
 
+    if getattr(rec, "charge_t12", None):
+        r += 1
+        _set(ws, r, 1, "Charge → T12 Placement (empirical contract-rent test)",
+             font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
+        for c in range(2, 7):
+            ws.cell(r, c).fill = _fill(SECT_FILL)
+        r += 1
+        _set(ws, r, 1, "Where each rent-roll charge actually LANDS on the T12 — matched by $ "
+             "(and name) to a real T12 line — decides what's in contract rent, not the charge "
+             "name. RUBS recoveries are booked as contra-expenses, so both sides are searched.",
+             font=_f(color=GREY, size=9), wrap=True)
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+        ws.row_dimensions[r].height = 30
+        r += 1
+        for c, h in enumerate(["Charge", "RR $/mo", "T12 placement", "Conf.",
+                               "In contract rent?", "Basis"], 1):
+            _set(ws, r, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
+                 align="center", wrap=True)
+        r += 1
+        _BUCKET = {"contract": "Contract rent", "other_income": "Other income",
+                   "rubs_recovery": "Utility/RUBS recovery", "unmatched": "—"}
+        for ct in rec.charge_t12:
+            in_contract = ct["bucket"] == "contract"
+            disagree = ct["agrees"] is False
+            _set(ws, r, 1, str(ct["cc"])[:30], font=_f())
+            _set(ws, r, 2, ct["amt"], fmt=MONEY, align="right")
+            _set(ws, r, 3, _BUCKET.get(ct["bucket"], ct["bucket"]),
+                 font=_f(color=(NAVY if not disagree else "C00000")), align="center")
+            _set(ws, r, 4, ct["conf"], font=_f(color=GREY, size=9), align="center")
+            _set(ws, r, 5, "Yes" if in_contract else "No",
+                 font=_f(bold=True, color=("008000" if in_contract else "C00000")), align="center")
+            _set(ws, r, 6, ct["note"], font=_f(color=(GREY if not disagree else "843C0C"),
+                 size=9), wrap=True)
+            ws.row_dimensions[r].height = 30
+            r += 1
+
     if getattr(rec, "correlations", None):
         r += 1
         _set(ws, r, 1, "Correlated Cross-Checks (rent-roll counts/charges ↔ T12 income)",
@@ -1100,6 +1136,7 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                 f"Standardized NOI for {t['label']} (${t['comp_noi']:,.0f}) differs from the "
                 f"operator's reported Net Operating Income (${t['rep_noi']:,.0f}) by ${gap:,.0f} "
                 f"-- a line crossed the NOI boundary in categorization; review the Code column.")
+    rec.charge_t12 = il.match_charges_to_t12(st, rr)
     if hd:
         rec.hd_fee_netting = {
             "hd_raw": hd_raw or 0.0,
