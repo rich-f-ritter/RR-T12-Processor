@@ -24,6 +24,18 @@ The lesson: **confirm at the unit level before netting.** A website that bundles
 HD picked the bundle up. On other properties the website's advertised number *is* the all-in
 figure and HD *does* carry it — there the netting is correct. Decide per deal.
 
+**Worked example — The Preserve, Grapevine TX (a confirmed bundle → net it):** a **Greystar**
+property, and Greystar advertises a **"Total Monthly Leasing Price" = Base Rent + fixed,
+mandatory monthly fees** (it's their standard pricing model, stated right on the listing). HD
+scrapes that all-in number. The rent roll carries exactly two flat, near-universal mandatory
+fees — **Trash Rebill – Door to Door $25** (386 of 399 units) and **Package Valet $15** (≈all
+units) = **$40**. HD T90 asking ($1,905, mix-wtd) sat **$75** over the new-lease base ($1,830);
+netting the confirmed **$40** bundle left a ~$35 residual, i.e. ordinary asking-over-signed
+premium (~2%). Built with `--hd-fee-offset 40`. Contrast with Aura: same flag fired on both,
+but the Aura website didn't bundle and Greystar's does — which is exactly why the call is made
+per deal, not by rule. The **"Total Monthly Leasing Price"** phrasing (Greystar and some other
+operators) is the most reliable tell that HD is carrying an all-in number.
+
 ## Why the skill does not auto-detect the fee
 The truth lives on the **property website**, and the data the skill has (rent roll + T12 + HD
 executed) does not contain a clean fee signal. Every inference route is unreliable:
