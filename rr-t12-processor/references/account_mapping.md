@@ -128,6 +128,15 @@ amenity-verification flag) on every run, so the treatment is re-validated per de
 than assumed. Pet rent, parking, and technology/valet packages are **not** contract rent
 (they are Other Income / their own codes).
 
+**Amenity *rent* vs amenity *fee* — they are not the same.** The above applies to an amenity
+**rent premium** that folds into Rental Income (no separate T12 line). A flat monthly **amenity
+fee** is different: operators book it as its **own Other Income line** (e.g. Aura's "Amenities
+Income," ~$10/unit/mo), so it is **not** contract rent. The two are easy to confuse by name.
+The Reconciliation **"Charge → T12 Placement"** test resolves it empirically — it matches the
+charge to the T12 line it actually lands on, so an amenity item that ties to an Other Income
+line is correctly excluded from contract rent, while one folded into Rental Income stays in.
+Decide by where it lands on the T12, not by the word "amenity."
+
 ## New vs renewal (lease-date rule)
 
 Per-unit: **new lease** = lease start date **on or before** move-in date; **renewal** =

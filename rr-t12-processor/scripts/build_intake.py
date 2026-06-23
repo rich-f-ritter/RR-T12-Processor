@@ -1190,11 +1190,11 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
         if hd_fee > 0:
             note = (f"HelloData reflects the website 'Total Monthly', which can bundle mandatory "
                     f"fees. HD market rent here is shown NET of ${hd_fee:,.2f}/mo (explicit override). "
-                    f"See 'Reconciliation → HelloData Asking: Fee Netting' for the full derivation.")
+                    f"See 'Reconciliation → HelloData Market Rent: Fee Netting' for the full derivation.")
         else:
             note = (f"HelloData market rent is shown GROSS — no fee netted. Candidate flat fees on "
                     f"the rent roll: {comp_txt}. If the property website bundles fees into its asking "
-                    f"price, set --hd-fee-offset; see 'Reconciliation → HelloData Asking: Fee Netting'.")
+                    f"price, set --hd-fee-offset; see 'Reconciliation → HelloData Market Rent: Fee Netting'.")
         lt.notes.insert(0, note)
 
     n = st.n_months
@@ -1265,8 +1265,10 @@ def main():
                     help="Optional charge-code lookup (Account/Name[/Type]) for rent rolls "
                          "that bill by numeric code rather than name.")
     ap.add_argument("--hd-fee-offset", dest="hd_fee_offset", type=float, default=None,
-                    help="Override the $/mo of mandatory fees HelloData bundles into asking "
-                         "rent (else auto-detected from the rent roll).")
+                    help="$/mo of website-bundled mandatory fees to net from HelloData asking "
+                         "AND effective. Default: none (HD shown gross; the build flags when HD "
+                         "sits materially above the new-lease base so you can confirm the "
+                         "website's 'Total Monthly' and set this).")
     ap.add_argument("--name", default=None)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()

@@ -51,7 +51,7 @@ truth, which lives on the **property website** (not in the rent roll, T12, or HD
 - List the **candidate flat fees** on the rent roll (as evidence, never auto-applied).
 - **Flag** when the gap is material (HD gross > base by more than ~$10 or ~0.5% of base),
   prompting the user to confirm the website bundle and pass `--hd-fee-offset`.
-- Disclose all of it on the Reconciliation tab's **"HelloData Asking: Fee Netting"** section.
+- Disclose all of it on the Reconciliation tab's **"HelloData Market Rent: Fee Netting"** section.
 
 The gap is a *flag*, not a fee: it also contains genuine market premium, so it must not be
 assumed to be all fees.

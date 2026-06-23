@@ -97,7 +97,12 @@ HelloData tab appears only when a HelloData CSV is provided):
 - **HelloData** *(if provided)* — CSV pass-through matching the model's `HD Dump`.
 - **Reconciliation** — rent-roll ↔ T12 control tie-outs including the **T1 AGPR** tie
   (RR contract rent ↔ latest-month annualized AGPR) and the **amenity-rent verification**;
-  a charge-code map flagging which charges are **in contract rent**; **correlated
+  a charge-code map flagging which charges are **in contract rent**, plus a **"Charge → T12
+  Placement"** test that decides contract-rent membership *empirically* — matching each charge
+  to the T12 line it actually lands on (both sides, since RUBS recoveries are booked as
+  contra-expenses) and flagging disagreements with the categorization; a **"HelloData Market
+  Rent: Fee Netting"** disclosure (gross→net HD asking **and** effective, the HD-vs-base gap,
+  and the rent-roll candidate fees); **correlated
   cross-checks** (parking spaces billed ↔ T12 parking income; utility expense ↔ RUBS/billback
   income = **% recaptured**); an **NOI tie-out** that compares the standardized NOI to each
   source statement's own reported "Net Operating Income" subtotal (Δ should be ~0 — the RUBS
@@ -148,9 +153,10 @@ Open `T12 Categorized` and scan the **Code** column. The categorizer is a strong
 pass (validated at ~96–100% vs RedIQ on the test deal); confirm the operator-specific,
 reliably contentious lines — see `references/account_mapping.md` (trash → `cont`,
 workers' comp → `Pay`, employee-apartment concession → `PBo`, month-to-month →
-`Rentinc`, **amenity rent → `Rentinc`/contract rent**, insurance split from taxes, late
-fees → `OI`). Re-map by picking a new code from the dropdown; Category and the OS Summary
-re-roll automatically.
+`Rentinc`, **amenity rent → `Rentinc`** *only when it folds into Rental Income* — an amenity
+*fee* booked as Other Income is not contract rent; the Reconciliation "Charge → T12 Placement"
+test confirms which — insurance split from taxes, late fees → `OI`). Re-map by picking a new
+code from the dropdown; Category and the OS Summary re-roll automatically.
 
 ### 4. Check the reconciliation
 
@@ -230,7 +236,11 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
   "HelloData Market Rent: Fee Netting"** section discloses the full derivation (gross HD T90
   asking AND effective, base, gap, fee netted + source, net asking + net effective,
   candidates). The fee is removed from **both asking and effective** (and from T365 + the YoY
-  reads) — anywhere HD market rent is shown — not just asking.
+  reads) — anywhere HD market rent is shown — not just asking. **YoY note:** the HD90 YoY
+  columns are computed on the **net-of-fee** rents (both the current and the year-ago figure),
+  so the fee offset slightly shifts the growth rate (~0.1%). This is deliberate — it measures
+  true rent growth with the constant fee stripped from both periods; it is *not* a $-for-$
+  subtraction from the percentage.
   **When this gap is flagged, ASK the user** to check the property website's "Total Monthly"
   breakdown for a unit; if it bundles fees, re-run with `--hd-fee-offset` to net them. Do not
   guess the amount — the gap also contains genuine market premium. (Aura's site bundles
@@ -246,10 +256,13 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
 
 ## Critical lessons
 
-- **Contract rent = AGPR, never "in-place rent."** Contract rent = base Rent + **Amenity
-  rent**. Amenity rent maps to Rental Income because it appears nowhere else on the T12,
-  and including it ties the rent roll's contract rent tighter to the latest-month AGPR
-  (verified on the Reconciliation tab).
+- **Contract rent = AGPR, never "in-place rent."** Contract rent = base Rent + **amenity
+  rent** *where amenity rent folds into Rental Income* — i.e. it appears nowhere else on the
+  T12, so including it ties the rent roll's contract rent tighter to the latest-month AGPR.
+  But **do not assume every "amenity" line is contract rent**: an amenity *fee* booked as
+  **Other Income** (e.g. Aura's $10/mo, which ties to the T12 "Amenities Income" line) is
+  **not** contract rent. Let the Reconciliation **"Charge → T12 Placement"** test decide by
+  where the charge actually lands on the T12, not the charge name.
 - **Faithfully surface, don't normalize.** Raw statements carry GL noise (one-off vacancy
   or concession reclasses, lease-up ramps). Report it on Lease Trend / flags; let the analyst
   normalize in the model.
