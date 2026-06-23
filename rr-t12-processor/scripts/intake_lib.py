@@ -1423,8 +1423,11 @@ def match_charges_to_t12(st, rr, tol=0.25):
         if strong:
             _s, rel, sim, c = best
             sect = c["section"].upper()
+            _CONTRA = {"conc", "ltl", "vac", "nr", "cl"}   # rental-income contras, NOT contract rent
             if c["kind"] == "rec":
                 bucket = "rubs_recovery"
+            elif c["code"] in _CONTRA or c["avg"] < 0:
+                bucket = "rental_contra"   # vacancy / concessions / loss-to-lease / write-offs
             elif "OTHER INCOME" in sect or c["code"] in ("OI", "park", "cable"):
                 bucket = "other_income"
             else:
@@ -1440,6 +1443,10 @@ def match_charges_to_t12(st, rr, tol=0.25):
             where = f"T12 '{match['name']}'" if best[2] >= 3 else "the T12's RUBS/utility-rebill block"
             note = (f"Ties to {where} (~{match['avg']:,.0f}/mo, booked as a contra-expense) — "
                     f"a resident recovery, not contract rent.")
+        elif strong and bucket == "rental_contra":
+            what = match['name'] if best[2] >= 3 else "concession / credit / vacancy"
+            note = (f"Ties to a rental-income contra (~{match['avg']:,.0f}/mo, {what}) — a credit "
+                    f"that REDUCES rental income; it is NOT a component of contract rent.")
         elif strong:
             note = (f"Ties to T12 '{match['name']}' ({match['avg']:,.0f}/mo, "
                     f"{match['section'].title() or 'revenue'}); {rel*100:.0f}% from "

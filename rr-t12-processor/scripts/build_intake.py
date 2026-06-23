@@ -839,7 +839,8 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
                  align="center", wrap=True)
         r += 1
         _BUCKET = {"contract": "Contract rent", "other_income": "Other income",
-                   "rubs_recovery": "Utility/RUBS recovery", "unmatched": "—"}
+                   "rubs_recovery": "Utility/RUBS recovery",
+                   "rental_contra": "Concession / rental contra", "unmatched": "—"}
         for ct in rec.charge_t12:
             in_contract = ct["bucket"] == "contract"
             disagree = ct["agrees"] is False
