@@ -78,6 +78,13 @@ Signs come straight from the GL — the rollup is a plain `SUM`, never re-signed
 ### RedIQ quirks worth knowing
 - **Trash hauling → `cont`** (Contract), not a utility. Valet-trash *recovery* on the
   income side → `RT`.
+- **"Rebill" / "Reimbursement" — recovery (revenue) vs billing-program cost (expense).**
+  A utility *recovery* billed to residents ("Water/Sewer Rebill", "Electric Rebill",
+  "Utility Reimbursement", "Reimbursed Pest") is RUBS **revenue** → `RWS`/`RT`/`RF` (even when
+  the operator parks it on the expense side as a contra — it's sign-flipped up to income). But a
+  **"rebill service" or "billing fee"** line ("Utility Rebill Services", "Utility Rebill Service
+  Fees") is the **cost the property pays a third party to run the RUBS program** — a genuine
+  utility **expense → `UF`** (Utilities Fees), not income. The tell is the word *service*/*fee*.
 - **Workers' comp → `Pay`** (RedIQ keeps it in base payroll, not burden).
 - **Employee apartment concession → `PBo`** (a payroll bonus, not a rent concession).
 - **Month-to-month / STL fee → `Rentinc`** (pulled up into rental income).

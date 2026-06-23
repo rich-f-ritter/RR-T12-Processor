@@ -296,10 +296,12 @@ def _override(name):
     n = (name or "").strip().lower()
     # Utility "Rebill" / "Reimbursed" lines are RUBS recovery REVENUE regardless of which
     # side of the statement the operator parks them on (some book them in the expense
-    # section). Resolve them up front so they don't read as a utility expense. EXCLUDE
-    # billing/service "fee" lines — those are the expense the property pays to run the
-    # rebilling program (e.g. "Utility Rebill Service Fees" -> stays a utility fee).
-    if re.search(r"rebill|reimburs", n) and not re.search(r"\bfee", n):
+    # section). Resolve them up front so they don't read as a utility expense. BUT the
+    # billing-PROGRAM cost the property pays to run RUBS — a "rebill service" or "billing
+    # fee" line (e.g. "Utility Rebill Services", "Utility Rebill Service Fees") — is a
+    # genuine utility EXPENSE, not a resident recovery, so it maps to UF (Utilities Fees).
+    if re.search(r"rebill|reimburs", n):
+        if re.search(r"\b(fee|service)s?\b", n):          return "UF"
         if re.search(r"water|sewer", n):                  return "RWS"
         if re.search(r"trash|refuse|garbage", n):         return "RT"
         return "RF"
