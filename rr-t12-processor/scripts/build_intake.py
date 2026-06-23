@@ -1152,6 +1152,20 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                        "Not netted — HD shown gross. Set --hd-fee-offset to net a "
                        "website-confirmed bundle."),
         }
+        # Flag (don't auto-apply): when HD gross sits materially above the new-lease base and
+        # no override was given, the website may be bundling mandatory fees. Surface it as a
+        # CONFIRM action — the true bundle lives on the property website, not in this data.
+        if (hd_fee_offset is None and calib_gap is not None
+                and calib_gap > max(10.0, 0.005 * (base or 0.0))):
+            comp_txt = ", ".join(f"{cc} ${amt:,.2f}" for cc, amt in bundle_comps) or "none itemized"
+            rec.flags.append(
+                f"HelloData asking sits ${calib_gap:,.0f}/mo above the new-lease base rent "
+                f"(gross HD T90 ${hd_raw:,.0f} vs base ${base:,.0f}) — the property website may "
+                f"bundle mandatory fees into its 'Total Monthly'. HD is shown GROSS (not netted). "
+                f"Candidate flat fees on the rent roll: {comp_txt}. CONFIRM the website's "
+                f"'Total Monthly' breakdown for a unit and, if it bundles fees, re-run with "
+                f"--hd-fee-offset <$/mo> to net them. (This gap also includes genuine market "
+                f"premium, so do not assume it is all fees.)")
     tr = il.build_trends(st, rr)
     lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee, extra_rolls=extra_rolls)
     if extra_rolls:

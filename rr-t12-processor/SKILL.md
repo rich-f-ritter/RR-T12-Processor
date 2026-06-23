@@ -218,18 +218,22 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
   resolve to the rent roll's internal plan codes; the website names are shown on the unit
   mix. HelloData scrapes the website **"Total Monthly"** price, which can fold **mandatory
   flat fees** (pest, amenity, valet trash, utility-billing admin, tech) into the asking
-  number — inflating it vs base/contract rent. **Netting is explicit and disclosed, never
-  silently inferred:** HD is shown **gross** by default, and a fee is netted **only** when
-  **`--hd-fee-offset <$/mo>`** supplies a website-confirmed amount. (Keying on rent-roll
-  charge codes is unreliable — it grabs per-unit "Varies" charges the website excludes and
-  misses fees not itemized per unit; e.g. Aura's site bundles pest $5 + amenity $10 = **$15**,
-  but the rent roll's `trtra`/`amfee` codes would mis-detect $35.) The **Reconciliation tab →
-  "HelloData Asking: Fee Netting"** section discloses the full derivation: gross HD T90
-  asking, rent-roll new-lease base, the implied gap, the fee netted (with source), the net
-  asking, and the rent-roll candidate fees (shown for evidence, **not** auto-applied). To
-  confirm the right offset, verify the property website's "Total Monthly" breakdown for the
-  unit (the **future** auto-detector — see `references/hd_fee_detection.md` — derives it from
-  per-unit HD-vs-signed deltas).
+  number — inflating it vs base/contract rent. **Policy: gross + flag + confirm.** The skill
+  does **not** auto-apply a fee — the true bundle lives on the **property website**, which this
+  data (rent roll + T12 + HD executed) cannot see, and inferring it is unreliable (charge-code
+  keying grabs per-unit "Varies" charges the website excludes and misses fees not itemized per
+  unit; per-unit HD-vs-signed deltas are swamped by concession/term/listing-timing noise — see
+  `references/hd_fee_detection.md`). So HD is shown **gross**, and the skill **flags** when HD
+  gross sits materially above the new-lease base rent (likely website-bundled fees) and lists
+  the rent-roll candidate fees as **evidence**. A fee is netted **only** when
+  **`--hd-fee-offset <$/mo>`** supplies a confirmed amount. The **Reconciliation tab →
+  "HelloData Asking: Fee Netting"** section discloses the full derivation (gross HD T90, base,
+  gap, fee netted + source, net asking, candidates).
+  **When this gap is flagged, ASK the user** to check the property website's "Total Monthly"
+  breakdown for a unit; if it bundles fees, re-run with `--hd-fee-offset` to net them. Do not
+  guess the amount — the gap also contains genuine market premium. (Aura's site bundles
+  pest $5 + amenity $10 = **$15**; the rent roll's `trtra`/`amfee` codes would have mis-detected
+  $35 — which is exactly why the skill flags rather than auto-applies.)
 - The **last 5 new-lease contract rents** per floor plan (in the Dashboard unit mix) and
   **HelloData executed** rents — **T90/T365 asking & effective**, plus **HD90 YoY** — are
   the preferred market-rent reads; cross-check them against each other. The T12 market-rent
