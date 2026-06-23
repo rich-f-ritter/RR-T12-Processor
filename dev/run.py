@@ -62,8 +62,8 @@ def main():
     ap.add_argument("--t12", nargs="+",
                     default=[str(TESTDATA / "Canyon_Ridge__T12_2026.03.xlsx"),
                              str(TESTDATA / "Canyon_Ridge__T12_2026.05.xlsx")])
-    ap.add_argument("--rr",
-                    default=str(TESTDATA / "Canyon_Ridge__Rent_Roll_2026.05.31.xlsx"))
+    ap.add_argument("--rr", nargs="+",
+                    default=[str(TESTDATA / "Canyon_Ridge__Rent_Roll_2026.05.31.xlsx")])
     ap.add_argument("--hd",
                     default=str(TESTDATA / "hellodata_unit_details_2026.06.17.csv"))
     ap.add_argument("--charge-codes", dest="charge_codes", default=None)
@@ -77,7 +77,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
     build = [sys.executable, str(SKILL / "scripts" / "build_intake.py"),
-             "--t12", *args.t12, "--rr", args.rr, "--name", args.name,
+             "--t12", *args.t12, "--rr", *args.rr, "--name", args.name,
              "--out", args.out]
     if args.hd:
         build += ["--hd", args.hd]

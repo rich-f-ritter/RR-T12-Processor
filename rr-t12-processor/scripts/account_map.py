@@ -89,6 +89,7 @@ for c, l in EXPENSE_CODES:   CODE_SECTION[c] = "opex"
 for c, l in NONOP_REV_CODES: CODE_SECTION[c] = "nonop-rev"
 for c, l in NONOP_EXP_CODES: CODE_SECTION[c] = "nonop-exp"
 NEGATIVE_REVENUE_CODES = {"ltl", "vac", "conc", "cl", "nr"}
+REVENUE_CODE_SET = {c for c, _ in REVENUE_CODES}
 ALL_CODES = list(CODE_TO_CATEGORY.keys())
 
 

@@ -333,6 +333,15 @@ def parse_t12(path: str) -> T12:
         else:
             side = "exp"
         code = am.categorize_t12_line(name, side, cur_section, gl)
+        # Reimbursement / rebill lines often sit on the EXPENSE side as a contra-expense
+        # (a reimbursement that reduces a utility cost is booked negative; the rebilling
+        # service fee the property pays is booked positive). When such a line is
+        # reclassified to a REVENUE code (RWS/RT/RF), its sign must flip so it reads as
+        # income — a negative contra-expense becomes positive RUBS revenue, and a
+        # positive service-fee cost becomes a negative contra to that revenue. This
+        # matches how RedIQ presents these lines.
+        if side == "exp" and code in am.REVENUE_CODE_SET:
+            vals = [-v for v in vals]
         rows.append(T12Row("line", name, cur_section, side, gl, code,
                            vals, sum(vals)))
 
@@ -1593,7 +1602,8 @@ def _quarter(d):
     return (d.year, (d.month - 1) // 3 + 1)
 
 
-def build_lease_trend(rr: RentRoll, hd: Optional[HelloData], hd_fee: float = 0.0) -> LeaseTrend:
+def build_lease_trend(rr: RentRoll, hd: Optional[HelloData], hd_fee: float = 0.0,
+                      extra_rolls=None) -> LeaseTrend:
     ref_date = rr.as_of_date
     recent = recent_new_leases(rr, 5, ref_date)
     plan_of = _hd_plan_of(rr)        # HelloData -> RR floor plan via unit-number join
@@ -1644,16 +1654,28 @@ def build_lease_trend(rr: RentRoll, hd: Optional[HelloData], hd_fee: float = 0.0
         hd_eff[ym] = max(0.0, e - hd_fee) if e else 0.0
         hd_n[ym] = cnt
 
+    # New-lease contract-rent history. The current rent roll only carries leases still in
+    # place, so its new-lease signings reach back ~12-18 months. Older rent rolls (passed as
+    # extra_rolls) capture signings that have since turned over, extending this series back in
+    # time — each roll is classified against ITS OWN as-of date, and a signing seen in more
+    # than one roll (same unit + lease month) is counted once.
     new_pm, new_cnt = {}, {}          # (ym,plan) -> [contract rents] ; ym -> count
-    for u in rr.units:
-        if classify_lease(u, ref_date) != "new":
-            continue
-        d = _lease_date(u)
-        if not d or u.contract_rent <= 0:
-            continue
-        ym = (d.year, d.month); months.add(ym)
-        new_pm.setdefault((ym, rr_key(u)), []).append(u.contract_rent)
-        new_cnt[ym] = new_cnt.get(ym, 0) + 1
+    seen_new = set()
+    for roll in [rr] + list(extra_rolls or []):
+        rdate = roll.as_of_date
+        for u in roll.units:
+            if classify_lease(u, rdate) != "new":
+                continue
+            d = _lease_date(u)
+            if not d or u.contract_rent <= 0:
+                continue
+            ym = (d.year, d.month)
+            if (u.unit, ym) in seen_new:
+                continue
+            seen_new.add((u.unit, ym))
+            months.add(ym)
+            new_pm.setdefault((ym, rr_key(u)), []).append(u.contract_rent)
+            new_cnt[ym] = new_cnt.get(ym, 0) + 1
     new_rent, new_n = {}, {}
     for ym in {k[0] for k in new_pm}:
         num = den = 0.0                # mix-weight by floor-plan unit count (like the HD rows)

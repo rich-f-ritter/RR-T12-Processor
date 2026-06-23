@@ -961,19 +961,32 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
 # ===========================================================================
 # DRIVER
 # ===========================================================================
-def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None,
+def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
           charge_codes_path=None, hd_fee_offset=None):
     if isinstance(t12_paths, (str, bytes)):
         t12_paths = [t12_paths]
+    if isinstance(rr_paths, (str, bytes)):
+        rr_paths = [rr_paths]
     st = il.stitch_statements(list(t12_paths))
     charge_lookup = il.parse_charge_codes(charge_codes_path)
-    rr = il.parse_rent_roll(rr_path, charge_lookup)
     hd = il.parse_hellodata(hd_path) if hd_path else None
 
     # data vintage — prefer a precise date from the filename, else the in-file label
     def _file_date(path):
         m = re.search(r"(20\d{2})[._\-](\d{2})[._\-](\d{2})", os.path.basename(path))
         return f"{m.group(2)}/{m.group(3)}/{m.group(1)}" if m else None
+
+    # One or more rent rolls. The NEWEST (by as-of date) is the primary — it drives the
+    # dashboard, unit mix, reconciliation and lease-type analysis. Older rolls each get their
+    # own one-line tab and feed the lease-trend new-lease history (signings since turned over).
+    parsed_rolls = [(p, il.parse_rent_roll(p, charge_lookup)) for p in rr_paths]
+    def _roll_key(item):
+        p, r = item
+        return r.as_of_date or il._to_date(_file_date(p)) or _dt.date.min
+    parsed_rolls.sort(key=_roll_key, reverse=True)
+    rr_path, rr = parsed_rolls[0]
+    extra_paths = [p for p, _ in parsed_rolls[1:]]
+    extra_rolls = [r for _, r in parsed_rolls[1:]]
     rr_asof = _file_date(rr_path) or rr.as_of or "n/a"
     # latest statement = the freshest stitched file's window end (and its file date if present)
     latest_t12 = max(t12_paths, key=lambda p: (_file_date(p) or "", p))
@@ -1006,7 +1019,13 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None,
     mix = il.build_unit_mix(rr, hd, hd_fee=hd_fee)   # joins HD by unit #; RR as-of for new/renewal
     rec = il.reconcile(st, rr)
     tr = il.build_trends(st, rr)
-    lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee)
+    lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee, extra_rolls=extra_rolls)
+    if extra_rolls:
+        older = ", ".join(sorted((_file_date(p) or "older") for p in extra_paths))
+        lt.notes.insert(0, f"New-Lease Contract / unit history draws on {len(extra_rolls)+1} rent "
+                           f"rolls (current {rr_asof} + older {older}); older rolls supply signings "
+                           f"that have since turned over. The dashboard and unit mix use the current "
+                           f"rent roll only.")
     if hd and bundle_total > 0:
         comp_txt = ", ".join(f"{cc} ${amt:,.2f}" for cc, amt in bundle_comps) or "—"
         if hd_fee > 0:
@@ -1031,6 +1050,17 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None,
     ws_t12 = wb.create_sheet("T12 Categorized")
     ws_os = wb.create_sheet("OS Summary")
     ws_rr = wb.create_sheet("Rent Roll (One-Line)")
+    # one historical one-line tab per older rent roll (newest-first after the primary)
+    def _tab_date(path, r):
+        d = _file_date(path)
+        if d:
+            mm, dd, yy = d.split("/")
+            return f"{mm}-{dd}-{yy[2:]}"
+        return r.as_of_date.strftime("%m-%d-%y") if r.as_of_date else "older"
+    ws_rr_hist = []
+    for p, r in zip(extra_paths, extra_rolls):
+        name = f"Rent Roll (One-Line) {_tab_date(p, r)}"[:31]
+        ws_rr_hist.append((wb.create_sheet(name), r))
     ws_lt = wb.create_sheet("Lease Trend")
     ws_hd = wb.create_sheet("HelloData") if hd else None
     ws_rec = wb.create_sheet("Reconciliation")
@@ -1046,6 +1076,8 @@ def build(t12_paths, rr_path, hd_path=None, prop_name=None, out_path=None,
     write_os_grid(ws_os, st, prop_name, last12,
                   title="Operating Statement — Standardized (live rollup)", subtitle=sub)
     write_rent_roll(ws_rr, rr, hd)
+    for ws_h, r in ws_rr_hist:
+        write_rent_roll(ws_h, r, hd)
     write_lease_trend(ws_lt, lt, st, tr, rr, has_hd=bool(hd))
     if ws_hd is not None:
         write_hellodata(ws_hd, hd)
@@ -1064,7 +1096,10 @@ def main():
     ap = argparse.ArgumentParser(description="Build a RedIQ-replacement underwriting intake workbook.")
     ap.add_argument("--t12", required=True, nargs="+",
                     help="One or more T12 / monthly operating statements (stitched into one continuous series).")
-    ap.add_argument("--rr", required=True, help="Rent roll (use the most recent).")
+    ap.add_argument("--rr", required=True, nargs="+",
+                    help="One or more rent rolls. The newest (by as-of date) drives the "
+                         "dashboard/unit mix; each gets its own one-line tab and older rolls "
+                         "extend the lease-trend new-lease history.")
     ap.add_argument("--hd", default=None, help="HelloData unit-details CSV (optional).")
     ap.add_argument("--charge-codes", default=None, dest="charge_codes",
                     help="Optional charge-code lookup (Account/Name[/Type]) for rent rolls "

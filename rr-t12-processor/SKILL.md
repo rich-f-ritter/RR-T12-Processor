@@ -31,14 +31,19 @@ the underwriting model. Deep submarket comp work belongs to
    interest & principal, Depreciation & Amortization, Partnership/Owner, and grab-bag
    "Adjustments" carrying distributions, contributions, loan & mortgage balances) are routed
    to the non-op codes so they stay **out of NOI** — never operating G&A or vacancy.
-2. **Rent roll** (.xlsx or binary .xls) — native export (Yardi/CBREI/RealPage/Entrata/
-   OneSite), as-of a recent month. Use the **newest** if several are provided. Carries
-   **move-in** and ideally **lease start** dates (used to split new vs renewal — see *New vs
-   renewal*); the parser auto-detects the column layout (two-row headers, and both
-   **charge-code sub-row** "block" rolls and **flat/wide** rolls where each charge is its own
-   column) and the unit-id format. OneSite-style rolls that list an upcoming lease
-   (Applicant / Pending renewal / Future) as a **second row** per unit are collapsed to one
-   row per physical unit, so unit counts and occupancy tie to the operator's own totals.
+2. **Rent roll(s)** (.xlsx or binary .xls) — native export (Yardi/CBREI/RealPage/Entrata/
+   OneSite), as-of a recent month. Carries **move-in** and ideally **lease start** dates
+   (used to split new vs renewal — see *New vs renewal*); the parser auto-detects the column
+   layout (two-row headers, and both **charge-code sub-row** "block" rolls and **flat/wide**
+   rolls where each charge is its own column) and the unit-id format. OneSite-style rolls that
+   list an upcoming lease (Applicant / Pending renewal / Future) as a **second row** per unit
+   are collapsed to one row per physical unit, so unit counts and occupancy tie to the
+   operator's own totals.
+   You may pass **several rent rolls** (`--rr a.xlsx b.xlsx …`). The **newest** (by as-of date)
+   is primary — it alone drives the dashboard, unit mix, occupancy and lease-type reads. Each
+   roll gets its own **one-line tab** (dated), and **older rolls extend the Lease Trend's
+   new-lease history** back in time — they capture signings that have since turned over and so
+   are gone from the current roll.
 3. **HelloData "Unit Details" CSV** *(optional)* — supplies clean bed/bath, the **T90
    executed** market-rent indicator per floor plan, and the monthly market-rent trend.
    It is joined to the rent roll **by unit number**, so HelloData's marketing floor-plan
@@ -113,7 +118,7 @@ underwriting actually trusts; renewals are excluded.
 ```bash
 python3 <skill_dir>/scripts/build_intake.py \
   --t12 "<statement1.xlsx>" ["<statement2.xlsx>" ...] \
-  --rr  "<RentRoll.xlsx>" \
+  --rr  "<RentRoll.xlsx>" ["<OlderRentRoll.xlsx>" ...] \
   [--hd "<hello.csv>"] [--charge-codes "<lease_charge_codes.xlsx>"] [--hd-fee-offset <$/mo>] [--name "Property Name"] \
   --out /home/claude/<Property>__Underwriting_Intake.xlsx
 ```
@@ -223,6 +228,11 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
 - **The categorizer is a first pass, not gospel.** The editable code column + live rollup
   is the deliverable — match RedIQ where unambiguous to minimize edits; the user owns the
   judgment calls.
+- **Reimbursement lines booked on the expense side flip sign.** Utility rebill / reimbursement
+  lines that an operator parks in the expense section (a recovery booked as a negative
+  contra-expense, or a rebilling service-fee cost booked positive) are reclassified to the RUBS
+  revenue codes (RWS/RT/RF) and their sign is **negated** so they read as income — matching how
+  RedIQ presents them, and keeping EGR/NOI correct.
 - **Recalc is non-negotiable** — the standardized statements are formulas, so an
   un-recalced file shows zeros until opened.
 
