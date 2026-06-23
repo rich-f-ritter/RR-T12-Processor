@@ -756,7 +756,7 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
     nett = getattr(rec, "hd_fee_netting", None)
     if nett:
         r += 1
-        _set(ws, r, 1, "HelloData Asking: Fee Netting (market-rent comparability)",
+        _set(ws, r, 1, "HelloData Market Rent: Fee Netting (asking AND effective)",
              font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
         for c in range(2, 7):
             ws.cell(r, c).fill = _fill(SECT_FILL)
@@ -765,20 +765,28 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
             _set(ws, r, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
                  align="center", wrap=True)
         r += 1
-        net_ask = (nett["hd_raw"] - nett["applied"]) if nett["hd_raw"] else 0.0
+        fee = nett["applied"]
+        net_ask = (nett["hd_raw"] - fee) if nett["hd_raw"] else 0.0
+        eff_g = nett.get("hd_raw_eff", 0.0)
+        net_eff = (eff_g - fee) if eff_g else 0.0
         net_rows = [
             ("HelloData T90 asking — gross (mix-wtd)", nett["hd_raw"],
              "What HelloData scrapes: the website 'Total Monthly', which can bundle mandatory fees."),
+            ("HelloData T90 effective — gross (mix-wtd)", eff_g,
+             "HD effective (net of concessions) — also carries the bundled fee, so it is netted too."),
             ("Rent-roll new-lease base rent (T90)", nett["base"],
              "Recently signed base/contract rent from the rent roll — no bundled fees."),
-            ("Implied gap (gross HD − base)", nett["gap"],
+            ("Implied gap (gross HD asking − base)", nett["gap"],
              "If HD sits a roughly constant amount above base across units, that delta is a bundled fee."),
-            ("Fee netted from HD asking", nett["applied"], nett["source"]),
+            ("Fee netted (from BOTH asking & effective)", fee, nett["source"]),
             ("HelloData T90 asking — net of fee", net_ask,
-             "The HD market rents shown on the Lease Trend and Unit Mix tabs reflect this net amount."),
+             "Net asking shown on the Lease Trend / Unit Mix tabs."),
+            ("HelloData T90 effective — net of fee", net_eff,
+             "Net effective shown on the Lease Trend / Unit Mix tabs. The same fee is removed "
+             "from T365 and the YoY reads as well."),
         ]
         for label, val, note in net_rows:
-            bold_red = (label.startswith("Fee netted") and nett["applied"] > 0)
+            bold_red = (label.startswith("Fee netted") and fee > 0)
             _set(ws, r, 1, label, font=_f(bold=True))
             _set(ws, r, 2, val, fmt=MONEY, align="right",
                  font=_f(bold=True, color="C00000") if bold_red else _f())
@@ -1119,9 +1127,11 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
         return num / den if den else 0.0
     bundle_total, bundle_comps = il.mandatory_fee_bundle(rr)
     hd_fee = hd_fee_offset if hd_fee_offset is not None else 0.0
-    hd_raw = base = calib_gap = None
+    hd_raw = hd_raw_eff = base = calib_gap = None
     if hd:
-        hd_raw = _mw(il.build_unit_mix(rr, hd, hd_fee=0.0), "t90_ask")   # gross HD T90 asking
+        _gross_mix = il.build_unit_mix(rr, hd, hd_fee=0.0)               # gross HD (no fee)
+        hd_raw = _mw(_gross_mix, "t90_ask")                             # gross HD T90 asking
+        hd_raw_eff = _mw(_gross_mix, "t90_eff")                         # gross HD T90 effective
         base = il.new_lease_t90(rr)                                      # rent-roll new-lease base
         calib_gap = (hd_raw - base) if (hd_raw and base) else None
     mix = il.build_unit_mix(rr, hd, hd_fee=hd_fee)   # joins HD by unit #; RR as-of for new/renewal
@@ -1140,6 +1150,7 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
     if hd:
         rec.hd_fee_netting = {
             "hd_raw": hd_raw or 0.0,
+            "hd_raw_eff": hd_raw_eff or 0.0,
             "base": base or 0.0,
             "gap": calib_gap if calib_gap is not None else 0.0,
             "applied": hd_fee,

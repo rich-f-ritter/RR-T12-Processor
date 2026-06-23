@@ -227,8 +227,10 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
   gross sits materially above the new-lease base rent (likely website-bundled fees) and lists
   the rent-roll candidate fees as **evidence**. A fee is netted **only** when
   **`--hd-fee-offset <$/mo>`** supplies a confirmed amount. The **Reconciliation tab →
-  "HelloData Asking: Fee Netting"** section discloses the full derivation (gross HD T90, base,
-  gap, fee netted + source, net asking, candidates).
+  "HelloData Market Rent: Fee Netting"** section discloses the full derivation (gross HD T90
+  asking AND effective, base, gap, fee netted + source, net asking + net effective,
+  candidates). The fee is removed from **both asking and effective** (and from T365 + the YoY
+  reads) — anywhere HD market rent is shown — not just asking.
   **When this gap is flagged, ASK the user** to check the property website's "Total Monthly"
   breakdown for a unit; if it bundles fees, re-run with `--hd-fee-offset` to net them. Do not
   guess the amount — the gap also contains genuine market premium. (Aura's site bundles
