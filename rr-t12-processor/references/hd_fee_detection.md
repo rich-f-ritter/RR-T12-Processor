@@ -1,57 +1,67 @@
-# HelloData bundled fees — why the skill flags, and does NOT auto-detect
+# HelloData & website-bundled fees — why the skill flags, confirms, and does NOT auto-detect
 
-## Problem
-HelloData scrapes a property website's headline **"Total Monthly"** price, which can fold
-**mandatory flat fees** (pest, amenity, valet trash, utility-billing admin, tech) on top of
-base rent. So HD asking/effective is inflated versus the rent roll's base/contract rent, and
-to compare HD market reads against signed rents the bundle must be netted out — but **only the
-real bundle**, not noise or genuine market premium.
+## What HelloData actually reports
+HelloData reflects the **price the property website advertises**. **Usually that is the base
+asking rent.** But some operators advertise **all-in pricing** — base rent **plus** mandatory
+flat fees (pest, amenity, valet trash, utility-billing admin, tech) — as the headline
+"Total Monthly," and HelloData then captures that inflated number. Which one you get is
+**operator-dependent**, so the skill must not assume either way.
 
-## Decision: gross + flag + confirm (no auto-apply)
-The skill shows HD **gross**, **flags** when HD gross sits materially above the new-lease base
-rent, lists the rent-roll candidate fees as **evidence**, and nets a fee **only** when
-`--hd-fee-offset <$/mo>` supplies a confirmed amount. The agent should **ask the user** to
-confirm the website's "Total Monthly" breakdown when the gap is flagged.
+When HD carries an all-in number, HD asking/effective is inflated versus the rent roll's
+base/contract rent, and the bundle should be netted out for a like-for-like comparison — but
+**only the real bundle**, confirmed per deal, never an inferred guess.
 
-This is deliberate. Across thousands of deals, auto-applying an inferred fee produces
-*confidently wrong* adjustments, and the data the skill has does not contain a clean fee
-signal. The two inference approaches both fail:
+### The phenomenon is real — but a bundling website does NOT guarantee HD bundled
+**Worked example — Aura Beacon Island (a false alarm):** the property website itemizes a
+$15 bundle on its cost estimate — unit 5104 shows `$1,620 Total Monthly = Rent $1,605 +
+Pest $5 + Amenity $10`. It *looks* like HD should be $15 high. But HelloData's asking for
+unit 5104 came through at **$1,605 — the base rent**, not the $1,620 total. So **HD was not
+carrying the fee, and netting $15 would have understated it.** Verified by tying HD's
+unit-level asking to the website's base rent, and corroborated by HD's current on-market
+asking matching the website's advertised "starting" rents (1BR from $1,535, 2BR from $2,085).
+
+The lesson: **confirm at the unit level before netting.** A website that bundles does not mean
+HD picked the bundle up. On other properties the website's advertised number *is* the all-in
+figure and HD *does* carry it — there the netting is correct. Decide per deal.
+
+## Why the skill does not auto-detect the fee
+The truth lives on the **property website**, and the data the skill has (rent roll + T12 + HD
+executed) does not contain a clean fee signal. Every inference route is unreliable:
 
 ### 1. Charge-code keying fails
-Summing non-contract rent-roll charges billed on most units:
-- **Grabs charges the website excludes.** Aura's rent roll carries `trtra` (valet trash $25),
-  but the website lists Trash as *"Varies / per unit"* — not in the $1,620 headline.
-- **Misses fees not itemized per unit.** Aura's website bundles **Pest Control $5**, which is
-  not a distinct rent-roll charge code.
-
-Ground truth (Aura unit 5104): `$1,620 = Rent $1,605 + Pest $5 + Amenity $10`, so the real
-bundle is **$15** — but the charge-code heuristic produces **$35**.
+Summing non-contract rent-roll charges billed on most units grabs charges the website excludes
+(Aura's `trtra` valet trash $25 is "Varies/per-unit," not in the headline) and misses fees not
+itemized per unit (Aura's pest $5). It would have produced a $35 "bundle" for Aura — which is
+doubly wrong, since HD wasn't bundling anything there to begin with.
 
 ### 2. Per-unit HD-vs-signed delta clustering fails (empirically)
-The intuitive detector — cluster `HD rent − signed rent` per unit and read the constant offset
-as the fee — was tested on Aura (462 HD listings, 428 joined to the rent roll by unit):
-- The **dominant cluster is delta = $0** (87 listings tie exactly), **not** a clean +$15 cluster.
-- The rest are **scattered negatives** (−$250, −$239, −$185, …), median **−$143**.
-- **No visible +$15 cluster.**
+Clustering `HD rent − signed rent` per unit was tested on Aura (462 listings, 428 joined): the
+dominant delta cluster is **$0**, the rest scattered negatives (median −$143), no clean fee
+signal. HD lists a unit many times over its history, "effective" is net of concessions, and
+lease-term/concession noise swamps any flat fee.
 
-The signal is buried, for reasons that recur on most deals:
-1. HD lists a unit **multiple times over its history**; comparing an old listing to the current
-   signed rent without matching the listing to its lease (by date) adds noise.
-2. The bundle lives in HD's **asking / "Total Monthly,"** but **effective** rent is net of
-   concessions — a different number.
-3. **Concessions and lease-term** differences swamp a ~$15 fee.
+### 3. Scraping the website automatically is blocked
+Tested live on Aura (June 2026): the property's RentCafe site, the RentCafe backend,
+apartments.com, Lighthouse, and HAR **all return HTTP 403** (server-side bot protection; the
+agent proxy was healthy). And the cost-estimate breakdown is a dynamic JS widget that would not
+render through a markdown fetch even on a 200. So an automated, baked-in scraper is not viable
+across deals.
 
-Recovering it robustly would require listing-to-lease timing matches, rent-field selection, and
-term/concession adjustment before clustering — not simple, and **still** unable to recover the
-truth, which lives on the **property website** (not in the rent roll, T12, or HD executed data).
+## What the skill does instead: gross + flag + confirm
+- Show HD **gross**; never auto-apply a fee.
+- Compute, mix-weighted, the **gross HD T90 asking/effective**, the **new-lease base rent
+  (T90)**, and the **gap** between them.
+- **Flag** when HD asking sits materially above base (HD gross > base by ~$10 or ~0.5%).
+  The flag is explicit that the gap is **usually ordinary market premium** (current asking
+  above recently-signed rents) and only *sometimes* bundled fees.
+- List the rent-roll **candidate flat fees** as evidence (never auto-applied).
+- Net a fee **only** via `--hd-fee-offset <$/mo>`, after the user/agent **confirms** by
+  comparing HD's asking for a *currently-listed* unit to that unit's base vs "Total Monthly"
+  on the property website.
+- Disclose all of it on the Reconciliation tab's **"HelloData Market Rent: Fee Netting"**
+  section (gross→net for both asking and effective).
 
-## What the skill CAN do reliably (and does)
-- Compute, mix-weighted, the **gross HD T90 asking**, the **new-lease base rent (T90)**, and the
-  **gap** between them.
-- List the **candidate flat fees** on the rent roll (as evidence, never auto-applied).
-- **Flag** when the gap is material (HD gross > base by more than ~$10 or ~0.5% of base),
-  prompting the user to confirm the website bundle and pass `--hd-fee-offset`.
-- Disclose all of it on the Reconciliation tab's **"HelloData Market Rent: Fee Netting"** section.
-
-The gap is a *flag*, not a fee: it also contains genuine market premium, so it must not be
-assumed to be all fees.
+## Cleaner future input
+If HelloData's export or API exposes a **fees/concessions/amenities breakdown** (beyond the
+bundled `Last Asking/Effective Rent` in the Unit Details CSV), that is a deterministic source
+and beats both scraping and inference — worth asking the HD rep.

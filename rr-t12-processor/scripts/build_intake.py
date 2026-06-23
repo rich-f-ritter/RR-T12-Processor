@@ -1172,12 +1172,13 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
             comp_txt = ", ".join(f"{cc} ${amt:,.2f}" for cc, amt in bundle_comps) or "none itemized"
             rec.flags.append(
                 f"HelloData asking sits ${calib_gap:,.0f}/mo above the new-lease base rent "
-                f"(gross HD T90 ${hd_raw:,.0f} vs base ${base:,.0f}) — the property website may "
-                f"bundle mandatory fees into its 'Total Monthly'. HD is shown GROSS (not netted). "
-                f"Candidate flat fees on the rent roll: {comp_txt}. CONFIRM the website's "
-                f"'Total Monthly' breakdown for a unit and, if it bundles fees, re-run with "
-                f"--hd-fee-offset <$/mo> to net them. (This gap also includes genuine market "
-                f"premium, so do not assume it is all fees.)")
+                f"(gross HD T90 ${hd_raw:,.0f} vs base ${base:,.0f}). This is usually ordinary "
+                f"market premium (current asking above recently-signed rents), but on properties "
+                f"whose website advertises ALL-IN pricing, HelloData can pick up bundled fees. HD "
+                f"is shown GROSS (not netted). To check: compare HD's asking for a currently-listed "
+                f"unit to that unit's base rent vs 'Total Monthly' on the property website — if HD "
+                f"ties to the all-in total, re-run with --hd-fee-offset <$/mo>; if it ties to base "
+                f"(as at Aura), do NOT net. Candidate flat fees on the rent roll: {comp_txt}.")
     tr = il.build_trends(st, rr)
     lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee, extra_rolls=extra_rolls)
     if extra_rolls:

@@ -222,30 +222,32 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
 - **HelloData ↔ rent roll join + bundled-fee netting.** HelloData is matched to the rent
   roll **by unit number**, so HD's marketing floor-plan names (e.g. *Barnsley*, *Phoenix*)
   resolve to the rent roll's internal plan codes; the website names are shown on the unit
-  mix. HelloData scrapes the website **"Total Monthly"** price, which can fold **mandatory
-  flat fees** (pest, amenity, valet trash, utility-billing admin, tech) into the asking
-  number — inflating it vs base/contract rent. **Policy: gross + flag + confirm.** The skill
-  does **not** auto-apply a fee — the true bundle lives on the **property website**, which this
-  data (rent roll + T12 + HD executed) cannot see, and inferring it is unreliable (charge-code
-  keying grabs per-unit "Varies" charges the website excludes and misses fees not itemized per
-  unit; per-unit HD-vs-signed deltas are swamped by concession/term/listing-timing noise — see
-  `references/hd_fee_detection.md`). So HD is shown **gross**, and the skill **flags** when HD
-  gross sits materially above the new-lease base rent (likely website-bundled fees) and lists
-  the rent-roll candidate fees as **evidence**. A fee is netted **only** when
-  **`--hd-fee-offset <$/mo>`** supplies a confirmed amount. The **Reconciliation tab →
-  "HelloData Market Rent: Fee Netting"** section discloses the full derivation (gross HD T90
-  asking AND effective, base, gap, fee netted + source, net asking + net effective,
+  mix. HelloData reflects the **price the property website advertises**. **Usually that is the
+  base asking rent** — but some operators advertise **all-in pricing** (base + mandatory flat
+  fees like pest, amenity, valet trash, tech) as the headline number, and HD then captures the
+  inflated figure. **It is operator-dependent — do not assume either way.** **Policy: gross +
+  flag + confirm.** The skill shows HD **gross**, never auto-applies a fee (the truth lives on
+  the website, which this data can't see, and inference is unreliable — see
+  `references/hd_fee_detection.md`), **flags** when HD asking sits materially above the
+  new-lease base rent (could be bundled fees *or* ordinary market premium), and nets a fee
+  **only** when **`--hd-fee-offset <$/mo>`** supplies a confirmed amount. The **Reconciliation
+  tab → "HelloData Market Rent: Fee Netting"** section discloses the full derivation (gross HD
+  T90 asking AND effective, base, gap, fee netted + source, net asking + net effective,
   candidates). The fee is removed from **both asking and effective** (and from T365 + the YoY
   reads) — anywhere HD market rent is shown — not just asking. **YoY note:** the HD90 YoY
   columns are computed on the **net-of-fee** rents (both the current and the year-ago figure),
   so the fee offset slightly shifts the growth rate (~0.1%). This is deliberate — it measures
   true rent growth with the constant fee stripped from both periods; it is *not* a $-for-$
   subtraction from the percentage.
-  **When this gap is flagged, ASK the user** to check the property website's "Total Monthly"
-  breakdown for a unit; if it bundles fees, re-run with `--hd-fee-offset` to net them. Do not
-  guess the amount — the gap also contains genuine market premium. (Aura's site bundles
-  pest $5 + amenity $10 = **$15**; the rent roll's `trtra`/`amfee` codes would have mis-detected
-  $35 — which is exactly why the skill flags rather than auto-applies.)
+  **When the gap is flagged, CONFIRM before netting** — ideally by checking a *currently-listed*
+  unit on the property website: compare HD's asking for that unit to the website's base rent vs
+  "Total Monthly." If HD ties to the base, it's **not** bundling fees (don't net); if HD ties to
+  the all-in total, net the difference via `--hd-fee-offset`. Don't guess — the gap is often
+  just market premium. **Worked example (Aura Beacon Island):** the website itemizes a $15
+  bundle (pest $5 + amenity $10) into its Total Monthly, *but* HD's asking for unit 5104 came
+  through at **$1,605 = the base rent** (not the $1,620 total) — so HD was **not** carrying the
+  fee and **no netting was correct**. The lesson: a website that bundles does **not** guarantee
+  HD picked the bundle up — verify a unit before netting.
 - The **last 5 new-lease contract rents** per floor plan (in the Dashboard unit mix) and
   **HelloData executed** rents — **T90/T365 asking & effective**, plus **HD90 YoY** — are
   the preferred market-rent reads; cross-check them against each other. The T12 market-rent
