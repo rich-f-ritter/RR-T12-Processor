@@ -704,15 +704,23 @@ def write_hellodata(ws, hd: il.HelloData):
         _set(ws, 1, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
              align="center", wrap=True)
     r = 2
+    date_keys = {"Available On", "On Market Date", "Off Market Date"}
     for row in hd.rows:
         for c, key in enumerate(src_keys, 1):
             v = row.get(key, "")
-            try:
-                v = float(v) if v not in ("", None) and key not in (
-                    "Property Name", "Floorplan", "Unit", "Available On",
-                    "On Market Date", "Off Market Date", "AMI Level", "Est AMI Level") else v
-            except (ValueError, TypeError):
-                pass
+            if key in date_keys:
+                d = il._to_date(v)
+                if d is not None:
+                    _set(ws, r, c, d, font=_f(), fmt=DATEF)
+                    continue
+                v = ""
+            else:
+                try:
+                    v = float(v) if v not in ("", None) and key not in (
+                        "Property Name", "Floorplan", "Unit",
+                        "AMI Level", "Est AMI Level") else v
+                except (ValueError, TypeError):
+                    pass
             _set(ws, r, c, v, font=_f())
         _set(ws, r, 21, il._norm_plan(row.get("Floorplan", "")), font=_f(color=GREEN))
         r += 1
