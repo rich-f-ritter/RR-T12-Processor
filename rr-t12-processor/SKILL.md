@@ -201,13 +201,19 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
   roll **by unit number**, so HD's marketing floor-plan names (e.g. *Barnsley*, *Phoenix*)
   resolve to the rent roll's internal plan codes; the website names are shown on the unit
   mix. HelloData scrapes the website **"Total Monthly"** price, which can fold **mandatory
-  flat fees** (valet trash, pest, utility-billing admin, tech) into the asking number —
-  inflating it vs base/contract rent. The skill **auto-detects** that bundle from the rent
-  roll (flat fees billed on ≥80% of units) and shows HD **net** of it *only when* HD's raw
-  asking sits ~a bundle above the new-lease base rent (evidence the site bundles). Use
-  **`--hd-fee-offset <$/mo>`** to set the exact website bundle when the rent roll doesn't
-  itemize all of it (e.g. Artessa: rent roll shows valet trash $35 + pest $3 = $38, while
-  the site's $4.88 utility-billing admin lifts the true bundle to **$42.88**).
+  flat fees** (pest, amenity, valet trash, utility-billing admin, tech) into the asking
+  number — inflating it vs base/contract rent. **Netting is explicit and disclosed, never
+  silently inferred:** HD is shown **gross** by default, and a fee is netted **only** when
+  **`--hd-fee-offset <$/mo>`** supplies a website-confirmed amount. (Keying on rent-roll
+  charge codes is unreliable — it grabs per-unit "Varies" charges the website excludes and
+  misses fees not itemized per unit; e.g. Aura's site bundles pest $5 + amenity $10 = **$15**,
+  but the rent roll's `trtra`/`amfee` codes would mis-detect $35.) The **Reconciliation tab →
+  "HelloData Asking: Fee Netting"** section discloses the full derivation: gross HD T90
+  asking, rent-roll new-lease base, the implied gap, the fee netted (with source), the net
+  asking, and the rent-roll candidate fees (shown for evidence, **not** auto-applied). To
+  confirm the right offset, verify the property website's "Total Monthly" breakdown for the
+  unit (the **future** auto-detector — see `references/hd_fee_detection.md` — derives it from
+  per-unit HD-vs-signed deltas).
 - The **last 5 new-lease contract rents** per floor plan (in the Dashboard unit mix) and
   **HelloData executed** rents — **T90/T365 asking & effective**, plus **HD90 YoY** — are
   the preferred market-rent reads; cross-check them against each other. The T12 market-rent

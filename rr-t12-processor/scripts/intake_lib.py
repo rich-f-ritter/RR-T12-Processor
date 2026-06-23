@@ -1148,6 +1148,7 @@ class Reconciliation:
     charge_map: list            # list[(charge_code, code, ytype, sched$, in_contract)]
     correlations: list = field(default_factory=list)   # list[(label, detail_str)]
     noi_tie: list = field(default_factory=list)        # list[dict] per statement (see reconcile_noi)
+    hd_fee_netting: dict = field(default_factory=dict)  # HD asking gross→net disclosure (see build())
 
 
 def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:

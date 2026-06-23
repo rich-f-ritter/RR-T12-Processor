@@ -753,6 +753,47 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
         _set(ws, r, 6, ln.note, font=_f(color=GREY, size=9), wrap=True)
         r += 1
 
+    nett = getattr(rec, "hd_fee_netting", None)
+    if nett:
+        r += 1
+        _set(ws, r, 1, "HelloData Asking: Fee Netting (market-rent comparability)",
+             font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
+        for c in range(2, 7):
+            ws.cell(r, c).fill = _fill(SECT_FILL)
+        r += 1
+        for c, h in enumerate(["Measure", "Amount", "", "", "", "Note"], 1):
+            _set(ws, r, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
+                 align="center", wrap=True)
+        r += 1
+        net_ask = (nett["hd_raw"] - nett["applied"]) if nett["hd_raw"] else 0.0
+        net_rows = [
+            ("HelloData T90 asking — gross (mix-wtd)", nett["hd_raw"],
+             "What HelloData scrapes: the website 'Total Monthly', which can bundle mandatory fees."),
+            ("Rent-roll new-lease base rent (T90)", nett["base"],
+             "Recently signed base/contract rent from the rent roll — no bundled fees."),
+            ("Implied gap (gross HD − base)", nett["gap"],
+             "If HD sits a roughly constant amount above base across units, that delta is a bundled fee."),
+            ("Fee netted from HD asking", nett["applied"], nett["source"]),
+            ("HelloData T90 asking — net of fee", net_ask,
+             "The HD market rents shown on the Lease Trend and Unit Mix tabs reflect this net amount."),
+        ]
+        for label, val, note in net_rows:
+            bold_red = (label.startswith("Fee netted") and nett["applied"] > 0)
+            _set(ws, r, 1, label, font=_f(bold=True))
+            _set(ws, r, 2, val, fmt=MONEY, align="right",
+                 font=_f(bold=True, color="C00000") if bold_red else _f())
+            _set(ws, r, 6, note, font=_f(color=GREY, size=9), wrap=True)
+            ws.row_dimensions[r].height = 28
+            r += 1
+        comp_txt = ", ".join(f"{cc} ${amt:,.2f}" for cc, amt in nett["candidates"]) or "none detected"
+        _set(ws, r, 1, "Candidate flat fees on rent roll", font=_f(bold=True, color=NAVY))
+        _set(ws, r, 2, f"{comp_txt}  (disclosure only — NOT auto-netted; "
+                       f"confirm against the property website before netting)",
+             font=_f(color=BLACK, size=9), wrap=True)
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
+        ws.row_dimensions[r].height = 30
+        r += 1
+
     r += 1
     _set(ws, r, 1, "Charge-Code Map (rent roll scheduled, monthly)", font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
     for c in range(2, 7):
@@ -1026,11 +1067,13 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
     if not prop_name:
         prop_name = (st.title or os.path.splitext(os.path.basename(rr_path))[0]).strip()
     # HelloData scrapes the website "Total Monthly", which can bundle mandatory flat fees
-    # (valet trash, pest, utility admin, …) on top of base rent — inflating HD vs the rent
-    # roll's base/contract rent. Net them out for comparability. The bundle is auto-detected
-    # from the rent roll, but only APPLIED when the data supports it: HD raw asking must sit
-    # roughly a bundle above the new-lease base rent (evidence the website actually bundles).
-    # --hd-fee-offset overrides the amount outright.
+    # (pest, amenity, valet trash, utility admin, …) on top of base rent — inflating HD vs the
+    # rent roll's base/contract rent. We DO NOT silently infer or auto-apply a bundle: keying
+    # on rent-roll charge codes is unreliable (it grabs per-unit "Varies" charges the website
+    # excludes, and misses fees that aren't itemized per unit). Instead HD is shown GROSS by
+    # default, and a fee is netted only when --hd-fee-offset gives a website-confirmed amount.
+    # The rent-roll candidate bundle and the gross-HD-vs-base gap are SURFACED on the
+    # Reconciliation tab as evidence, but they never change the numbers on their own.
     def _mw(rows, attr):
         num = den = 0.0
         for m in rows:
@@ -1039,15 +1082,12 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                 num += v * m.units; den += m.units
         return num / den if den else 0.0
     bundle_total, bundle_comps = il.mandatory_fee_bundle(rr)
-    hd_fee, calib_gap = 0.0, None
-    if hd_fee_offset is not None:
-        hd_fee = hd_fee_offset
-    elif hd and bundle_total > 0:
+    hd_fee = hd_fee_offset if hd_fee_offset is not None else 0.0
+    hd_raw = base = calib_gap = None
+    if hd:
         hd_raw = _mw(il.build_unit_mix(rr, hd, hd_fee=0.0), "t90_ask")   # gross HD T90 asking
         base = il.new_lease_t90(rr)                                      # rent-roll new-lease base
         calib_gap = (hd_raw - base) if (hd_raw and base) else None
-        if calib_gap is not None and calib_gap >= 0.5 * bundle_total:
-            hd_fee = bundle_total
     mix = il.build_unit_mix(rr, hd, hd_fee=hd_fee)   # joins HD by unit #; RR as-of for new/renewal
     rec = il.reconcile(st, rr)
     rec.noi_tie = il.reconcile_noi(st)
@@ -1060,6 +1100,21 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                 f"Standardized NOI for {t['label']} (${t['comp_noi']:,.0f}) differs from the "
                 f"operator's reported Net Operating Income (${t['rep_noi']:,.0f}) by ${gap:,.0f} "
                 f"-- a line crossed the NOI boundary in categorization; review the Code column.")
+    if hd:
+        rec.hd_fee_netting = {
+            "hd_raw": hd_raw or 0.0,
+            "base": base or 0.0,
+            "gap": calib_gap if calib_gap is not None else 0.0,
+            "applied": hd_fee,
+            "candidates": bundle_comps,
+            "candidate_total": bundle_total,
+            "offset_given": hd_fee_offset is not None,
+            "source": ("Explicit override (--hd-fee-offset) — confirmed against the property "
+                       "website 'Total Monthly'."
+                       if hd_fee_offset is not None else
+                       "Not netted — HD shown gross. Set --hd-fee-offset to net a "
+                       "website-confirmed bundle."),
+        }
     tr = il.build_trends(st, rr)
     lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee, extra_rolls=extra_rolls)
     if extra_rolls:
@@ -1068,20 +1123,16 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                            f"rolls (current {rr_asof} + older {older}); older rolls supply signings "
                            f"that have since turned over. The dashboard and unit mix use the current "
                            f"rent roll only.")
-    if hd and bundle_total > 0:
+    if hd:
         comp_txt = ", ".join(f"{cc} ${amt:,.2f}" for cc, amt in bundle_comps) or "—"
         if hd_fee > 0:
-            note = (f"HelloData reflects the website 'Total Monthly', which bundles mandatory fees; "
-                    f"HD market rent is shown NET of ${hd_fee:,.2f}/mo for comparability to "
-                    f"base/contract rent. Detected from the rent roll: {comp_txt}.")
-            if hd_fee_offset is None:
-                note += (" Verify the website for admin/utility fees not itemized per-unit on the "
-                         "rent roll; override with --hd-fee-offset if the true bundle differs.")
+            note = (f"HelloData reflects the website 'Total Monthly', which can bundle mandatory "
+                    f"fees. HD market rent here is shown NET of ${hd_fee:,.2f}/mo (explicit override). "
+                    f"See 'Reconciliation → HelloData Asking: Fee Netting' for the full derivation.")
         else:
-            note = (f"Detected ${bundle_total:,.2f}/mo of mandatory flat fees on the rent roll "
-                    f"({comp_txt}), but HelloData asking does NOT sit a bundle above the new-lease "
-                    f"base rent, so HD is shown gross (not netted). If the property website bundles "
-                    f"fees into its asking price, set --hd-fee-offset to net them out.")
+            note = (f"HelloData market rent is shown GROSS — no fee netted. Candidate flat fees on "
+                    f"the rent roll: {comp_txt}. If the property website bundles fees into its asking "
+                    f"price, set --hd-fee-offset; see 'Reconciliation → HelloData Asking: Fee Netting'.")
         lt.notes.insert(0, note)
 
     n = st.n_months
