@@ -259,7 +259,7 @@ REVENUE_RULES = [
 EXPENSE_RULES = [
     (r"bonus|commission|incentive", "PBo"),
     (r"fica|payroll tax|medicare|health|401|benefit|workers? comp|work comp|unemploy|sui|futa|burden", "PB"),
-    (r"salary|salaries|wage|payroll|manager|leasing agent|maintenance (supervisor|technician|tech)|courtesy officer", "Pay"),
+    (r"salary|salaries|wage|payroll|overtime|\bo\.?t\b|manager|leasing agent|maintenance (supervisor|technician|tech)|courtesy officer", "Pay"),
     (r"advertis|marketing|signage|brochure|locator|ils|promotion|referral|resident retention|"
      r"resident event|reputation|website|seo|model expense", "adv"),
     (r"management fee|mgmt fee|asset management fee", "mgt"),
@@ -275,7 +275,7 @@ EXPENSE_RULES = [
     (r"repair|maintenance|hvac|plumb|electrical|appliance|window|door|screen|flooring|equipment|"
      r"hardware|lighting|key|lock|pool|spa|fountain|janitor|tools|building", "inter/exte"),
     (r"insurance", "ins"),
-    (r"real estate tax|property tax|^tax|re tax|ad valorem", "ret"),
+    (r"real estate tax|property tax|^tax|re tax|ad valorem|special assessment", "ret"),
     # non-operating items that sometimes appear without a clear section header
     (r"\binterest\b", "intex"),
     (r"depreciat|amortiz", "depex"),
