@@ -163,6 +163,22 @@ true market rent from the unit mix (new-lease + HelloData executed) and Lease Tr
 Then read the charge-code map — especially any RUBS/valet-trash recovery that could net
 against an expense or book as Other Income. Resolve the flags before underwriting.
 
+The **"Charge → T12 Placement (empirical contract-rent test)"** section settles *what is in
+contract rent* by evidence, not by charge name: each rent-roll charge is matched (by monthly
+$, and name where the code is mnemonic) to the T12 line it actually lands on — searching
+**both sides** of the T12, since RUBS recoveries (valet trash, water/sewer rebill, reimbursed
+pest) are booked as **contra-expenses**, not revenue. A charge is called contract rent only
+if it ties into a Rental Income line; if it ties to Other Income or a rebill it is not. The
+match **overrides** the name categorization only on strong evidence (a tight $ tie, or a
+decent tie corroborated by the line name) — a coincidental same-magnitude match cannot flip a
+charge, and a charge folded into Rental Income with no distinct T12 line (e.g. amenity *rent*)
+correctly stays contract. Disagreements between the evidence and the categorization are
+flagged in red for review of the Code column. (This is why, at Aura, the $10 **amenity fee**
+is *not* contract rent — it ties to the T12 "Amenities Income" line in Other Income — while
+Canyon Ridge's **amenity rent** is, since it folds into Rental Income.) The **"Contract Rent"**
+tie-out label adapts: it reads "incl. amenity rent" only when amenity rent actually rolls into
+contract rent.
+
 ### 5. Hand off to the model
 
 Use the paste targets in `references/model_paste_targets.md`. In short: `OS Summary`
