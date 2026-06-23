@@ -99,8 +99,11 @@ HelloData tab appears only when a HelloData CSV is provided):
   (RR contract rent ↔ latest-month annualized AGPR) and the **amenity-rent verification**;
   a charge-code map flagging which charges are **in contract rent**; **correlated
   cross-checks** (parking spaces billed ↔ T12 parking income; utility expense ↔ RUBS/billback
-  income = **% recaptured**); and flags. (The RR-vs-T12 market-rent gap is shown as
-  informational only — both are seller-set asking and not a market-rent signal.)
+  income = **% recaptured**); an **NOI tie-out** that compares the standardized NOI to each
+  source statement's own reported "Net Operating Income" subtotal (Δ should be ~0 — the RUBS
+  gross-up nets to zero at NOI, so a gap means a line crossed the NOI boundary and is flagged);
+  and flags. (The RR-vs-T12 market-rent gap is shown as informational only — both are
+  seller-set asking and not a market-rent signal.)
 - **Codes** — the standardized code legend and the dropdown's source list.
 
 The **unit mix** (on the Dashboard, beside the snapshot) covers each floor plan: bed/bath,
@@ -232,7 +235,10 @@ not** populate the model's underwriting tabs — these dumps are the only paste 
   lines that an operator parks in the expense section (a recovery booked as a negative
   contra-expense, or a rebilling service-fee cost booked positive) are reclassified to the RUBS
   revenue codes (RWS/RT/RF) and their sign is **negated** so they read as income — matching how
-  RedIQ presents them, and keeping EGR/NOI correct.
+  RedIQ presents them, and keeping EGR/NOI correct. This **grosses up** RUBS: EGR and OpEx each
+  rise by the recovery amount vs an operator statement that nets reimbursements inside expenses,
+  but **NOI is unchanged** — which is why the standardized NOI still ties to the operator's own
+  reported NOI line (see the Reconciliation tab's NOI tie-out).
 - **Recalc is non-negotiable** — the standardized statements are formulas, so an
   un-recalced file shows zeros until opened.
 

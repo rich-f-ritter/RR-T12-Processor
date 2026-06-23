@@ -784,6 +784,38 @@ def write_reconciliation(ws, rec: il.Reconciliation, rr: il.RentRoll):
             ws.row_dimensions[r].height = 30
             r += 1
 
+    if getattr(rec, "noi_tie", None):
+        r += 1
+        _set(ws, r, 1, "NOI Tie-Out to Operator Statement (each source statement, annual $)",
+             font=_f(bold=True, color=WHITE), fill=_fill(SECT_FILL))
+        for c in range(2, 7):
+            ws.cell(r, c).fill = _fill(SECT_FILL)
+        r += 1
+        for c, h in enumerate(["Statement", "Reported NOI", "Standardized NOI",
+                               "Δ", "Note"], 1):
+            _set(ws, r, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
+                 align="center", wrap=True)
+        r += 1
+        for t in rec.noi_tie:
+            _set(ws, r, 1, t["label"], font=_f(bold=True))
+            if t["rep_noi"] is None:
+                _set(ws, r, 2, "no NOI line", font=_f(color=GREY, size=9), align="right")
+                _set(ws, r, 3, round(t["comp_noi"]), fmt=MONEY, align="right")
+                _set(ws, r, 5, "Source statement has no 'Net Operating Income' subtotal; "
+                     "standardized NOI shown for reference.", font=_f(color=GREY, size=9), wrap=True)
+            else:
+                gap = t["comp_noi"] - t["rep_noi"]
+                ties = abs(gap) <= max(50.0, 0.001 * abs(t["rep_noi"]))
+                _set(ws, r, 2, round(t["rep_noi"]), fmt=MONEY, align="right")
+                _set(ws, r, 3, round(t["comp_noi"]), fmt=MONEY, align="right")
+                _set(ws, r, 4, round(gap), fmt=MONEY, align="right",
+                     font=_f(bold=True, color=("008000" if ties else "C00000")))
+                _set(ws, r, 5, "Ties to the operator's reported NOI (RUBS gross-up nets to zero)."
+                     if ties else "Differs — a line crossed the NOI boundary; review the Code column.",
+                     font=_f(color=GREY, size=9), wrap=True)
+            ws.row_dimensions[r].height = 28
+            r += 1
+
     if rec.flags:
         r += 1
         _set(ws, r, 1, "⚑ Flags for Underwriting", font=_f(bold=True, color=WHITE), fill=_fill("C00000"))
@@ -834,7 +866,7 @@ def write_codes(ws):
 # TAB: Dashboard
 # ===========================================================================
 def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
-                    rr_asof="n/a", stmt_asof="n/a"):
+                    rr_asof="n/a", stmt_asof="n/a", rr_tab="Rent Roll (One-Line)"):
     _set(ws, 1, 1, f"{prop_name} — Underwriting Intake", font=_f(bold=True, color=NAVY, size=16))
     nfiles = len(st.files)
     span = f"{st.month_labels[0]} – {st.month_labels[-1]} ({st.n_months} mo" \
@@ -939,7 +971,7 @@ def write_dashboard(ws, prop_name, st, rr, mix, rec, tr, lt, has_hd,
         "Copy A1:Q77 → model 'OS Summary Dump' A1 (Paste Special → Values).",
         "3.  'T12 Categorized' → copy Code, Category, Line Item + the most recent 12 month columns "
         "(NOT the Total column) → model 'T12 Dump' A2.",
-        "4.  'Rent Roll (One-Line)' → copy the core columns A2:M(last) → model 'RR Dump' A2.  "
+        f"4.  '{rr_tab}' (newest rent roll) → copy the core columns A2:M(last) → model 'RR Dump' A2.  "
         "(The per-unit charge-code columns to the right of the gap are reference detail, not a model paste target.)",
         ("5.  'HelloData' → copy A2:U(last) → model 'HD Dump' A2." if has_hd else "5.  (No HelloData provided — skip HD Dump.)"),
         "6.  The unit mix (with new-lease + HD T90/T365/YoY market-rent indicators) is on this Dashboard; "
@@ -1018,6 +1050,16 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
             hd_fee = bundle_total
     mix = il.build_unit_mix(rr, hd, hd_fee=hd_fee)   # joins HD by unit #; RR as-of for new/renewal
     rec = il.reconcile(st, rr)
+    rec.noi_tie = il.reconcile_noi(st)
+    for t in rec.noi_tie:
+        if t["rep_noi"] is None:
+            continue
+        gap = t["comp_noi"] - t["rep_noi"]
+        if abs(gap) > max(50.0, 0.001 * abs(t["rep_noi"])):
+            rec.flags.append(
+                f"Standardized NOI for {t['label']} (${t['comp_noi']:,.0f}) differs from the "
+                f"operator's reported Net Operating Income (${t['rep_noi']:,.0f}) by ${gap:,.0f} "
+                f"-- a line crossed the NOI boundary in categorization; review the Code column.")
     tr = il.build_trends(st, rr)
     lt = il.build_lease_trend(rr, hd, hd_fee=hd_fee, extra_rolls=extra_rolls)
     if extra_rolls:
@@ -1049,14 +1091,19 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
     ws_dash.title = "Dashboard"
     ws_t12 = wb.create_sheet("T12 Categorized")
     ws_os = wb.create_sheet("OS Summary")
-    ws_rr = wb.create_sheet("Rent Roll (One-Line)")
-    # one historical one-line tab per older rent roll (newest-first after the primary)
+    # One-line tab per rent roll. With a single roll, keep the canonical (undated) name; with
+    # several, DATE EVERY tab for symmetry. The newest stays the model-paste target.
     def _tab_date(path, r):
         d = _file_date(path)
         if d:
             mm, dd, yy = d.split("/")
             return f"{mm}-{dd}-{yy[2:]}"
         return r.as_of_date.strftime("%m-%d-%y") if r.as_of_date else "older"
+    if extra_rolls:
+        primary_tab = f"Rent Roll (One-Line) {_tab_date(rr_path, rr)}"[:31]
+    else:
+        primary_tab = "Rent Roll (One-Line)"
+    ws_rr = wb.create_sheet(primary_tab)
     ws_rr_hist = []
     for p, r in zip(extra_paths, extra_rolls):
         name = f"Rent Roll (One-Line) {_tab_date(p, r)}"[:31]
@@ -1083,7 +1130,7 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
         write_hellodata(ws_hd, hd)
     write_reconciliation(ws_rec, rec, rr)
     write_dashboard(ws_dash, prop_name, st, rr, mix, rec, tr, lt, has_hd=bool(hd),
-                    rr_asof=rr_asof, stmt_asof=stmt_asof)
+                    rr_asof=rr_asof, stmt_asof=stmt_asof, rr_tab=primary_tab)
 
     if not out_path:
         safe = "".join(ch if ch.isalnum() else "_" for ch in prop_name).strip("_")

@@ -1147,6 +1147,7 @@ class Reconciliation:
     flags: list                 # list[str]
     charge_map: list            # list[(charge_code, code, ytype, sched$, in_contract)]
     correlations: list = field(default_factory=list)   # list[(label, detail_str)]
+    noi_tie: list = field(default_factory=list)        # list[dict] per statement (see reconcile_noi)
 
 
 def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
@@ -1271,6 +1272,36 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
 
     return Reconciliation(latest_month=latest, lines=lines, flags=flags,
                           charge_map=charge_map, correlations=correlations)
+
+
+def reconcile_noi(st):
+    """Tie the standardized NOI back to each source statement's OWN reported
+    'Net Operating Income' subtotal. The RUBS gross-up (reimbursements moved from a
+    contra-expense to revenue) nets to zero at NOI, so a tie confirms the
+    categorization kept every operating line on the right side of the NOI boundary;
+    a gap flags a real difference (e.g. items pushed below NOI, or no clean NOI line
+    in the source). Returns one dict per stitched statement."""
+    rev_codes = am.REVENUE_CODE_SET
+    exp_codes = {c for c, _ in am.EXPENSE_CODES}
+    out = []
+    for f in st.files:
+        rep = {"noi": None, "rev": None, "opex": None}
+        for row in f.t12.rows:
+            if row.rtype != "subtotal" or not row.name:
+                continue
+            nm = row.name.upper()
+            val = row.total if row.total is not None else sum(row.values)
+            if "NET OPERATING INCOME" in nm:                        rep["noi"] = val
+            elif "TOTAL REVENUE" in nm or "EFFECTIVE GROSS" in nm:   rep["rev"] = val
+            elif "TOTAL OPERATING EXPENSE" in nm:                    rep["opex"] = val
+        comp_rev = sum(sum(r.values) for r in f.t12.rows
+                       if r.rtype == "line" and r.code in rev_codes)
+        comp_opex = sum(sum(r.values) for r in f.t12.rows
+                        if r.rtype == "line" and r.code in exp_codes)
+        out.append({"label": f.label, "rep_noi": rep["noi"], "comp_noi": comp_rev - comp_opex,
+                    "rep_rev": rep["rev"], "comp_rev": comp_rev,
+                    "rep_opex": rep["opex"], "comp_opex": comp_opex})
+    return out
 
 
 # ===========================================================================
