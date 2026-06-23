@@ -113,6 +113,10 @@ def _is_rollup(name, gl):
     rollup account suffix (…-098 / …-099). Deliberately does NOT key on words like
     'potential', which appear in real leaf line names (e.g. 'Gross Potential Rent')."""
     n = _s(name).lower()
+    # Some exports repeat the GL number inside the description cell
+    # ("49999-999 - Total Income"), which would defeat the ^total anchor. Strip a
+    # leading account-number prefix before testing the name prefix.
+    n = re.sub(r"^\s*\d{3,}[-_]\d+\s*[-–—:]+\s*", "", n)
     if re.match(r"^(total\b|net\b|subtotal|sub-total)", n):
         return True
     return bool(re.search(r"-0?9[89]$", _s(gl)))
