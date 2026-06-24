@@ -15,14 +15,12 @@ Claude app (where it runs against the public `xlsx` recalc helper and the siblin
 ## Layout
 
 ```
-.claude-plugin/
-  plugin.json               ← plugin manifest (name, version, description)
-skills/
-  rr-t12-processor/         ← the shippable skill
+.claude/skills/
+  rr-t12-processor/         ← the skill (auto-loads in Claude Code web sessions on this repo)
     SKILL.md
     references/             ← account_mapping.md, hd_fee_detection.md, model_paste_targets.md
     scripts/                ← account_map.py, intake_lib.py, build_intake.py
-dev/                        ← local dev harness (NOT part of the shipped plugin)
+dev/                        ← local dev harness (NOT part of the shipped skill)
   run.py                    ← build + recalc in one command
   recalc_local.py           ← deterministic, LibreOffice-free formula evaluator
   compare.py                ← regression: fresh build vs golden, cell-by-cell
@@ -32,22 +30,25 @@ dev/                        ← local dev harness (NOT part of the shipped plugi
   out/                      ← generated workbooks (git-ignored)
 ```
 
-## Install (team distribution)
+## Install / use the skill
 
-This repo IS a Claude Code plugin. Two ways for a teammate to install it:
+**Claude Code on the web — two ways:**
 
-```bash
-# A) From the distributable zip (no marketplace needed)
-claude --plugin-dir ./rr-t12-processor-plugin.zip
+- **Repo-scoped (zero setup):** the skill lives at `.claude/skills/rr-t12-processor/` on
+  `main`, so any web session started on this repo loads it automatically. Just upload a
+  T12 + rent roll (+ HelloData CSV) and ask for the underwriting intake.
+- **Account-wide:** upload the packaged skill zip in **claude.ai → Customize → Skills**
+  and enable it; it then loads in every cloud session, on any repo. (`SKILL.md` sits at
+  the zip root, as the uploader expects.)
 
-# B) From this git repo, via a marketplace entry
-/plugin marketplace add rich-f-ritter/rr-t12-processor
-/plugin install rr-t12-processor
-```
+Note: `/plugin` is **not** available in Claude Code on the web — the `.claude/skills/`
+location above is the correct web mechanism (desktop/CLI users could alternatively wrap
+it as a plugin).
 
-Once installed it appears as the `/rr-t12-processor` skill. Runtime needs: Python 3.8+,
-`openpyxl`, and LibreOffice (for the mandatory recalc via the public `xlsx` skill's
-`recalc.py`). The `dev/` harness is for maintaining the skill and is not required to run it.
+Runtime needs: Python 3.8+, `openpyxl`, and LibreOffice (for the mandatory recalc via the
+public `xlsx` skill's `recalc.py`). The `dev/` harness is for maintaining the skill and is
+not required to run it.
+
 
 
 ## Dev loop

@@ -6,8 +6,8 @@ __pycache__/
 # Generated workbooks
 dev/out/
 
-# Packaged skill artifact (regenerated from skills/ + .claude-plugin/ on each ship)
-rr-t12-processor-plugin.zip
+# Packaged skill artifact (regenerated from .claude/skills/ on each ship)
+rr-t12-processor-skill.zip
 
 # Real property financials + large reference binaries — kept LOCAL by default
 # (see dev/testdata/README.md). Flip these off only to commit fixtures for
