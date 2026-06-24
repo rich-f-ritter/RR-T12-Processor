@@ -15,11 +15,14 @@ Claude app (where it runs against the public `xlsx` recalc helper and the siblin
 ## Layout
 
 ```
-rr-t12-processor/           ← the shippable skill (this is what gets packaged)
-  SKILL.md
-  references/               ← account_mapping.md, model_paste_targets.md
-  scripts/                  ← account_map.py, intake_lib.py, build_intake.py
-dev/                        ← local dev harness (NOT part of the shipped skill)
+.claude-plugin/
+  plugin.json               ← plugin manifest (name, version, description)
+skills/
+  rr-t12-processor/         ← the shippable skill
+    SKILL.md
+    references/             ← account_mapping.md, hd_fee_detection.md, model_paste_targets.md
+    scripts/                ← account_map.py, intake_lib.py, build_intake.py
+dev/                        ← local dev harness (NOT part of the shipped plugin)
   run.py                    ← build + recalc in one command
   recalc_local.py           ← deterministic, LibreOffice-free formula evaluator
   compare.py                ← regression: fresh build vs golden, cell-by-cell
@@ -28,6 +31,24 @@ dev/                        ← local dev harness (NOT part of the shipped skill
   golden/                   ← known-good output to diff against (git-ignored)
   out/                      ← generated workbooks (git-ignored)
 ```
+
+## Install (team distribution)
+
+This repo IS a Claude Code plugin. Two ways for a teammate to install it:
+
+```bash
+# A) From the distributable zip (no marketplace needed)
+claude --plugin-dir ./rr-t12-processor-plugin.zip
+
+# B) From this git repo, via a marketplace entry
+/plugin marketplace add rich-f-ritter/rr-t12-processor
+/plugin install rr-t12-processor
+```
+
+Once installed it appears as the `/rr-t12-processor` skill. Runtime needs: Python 3.8+,
+`openpyxl`, and LibreOffice (for the mandatory recalc via the public `xlsx` skill's
+`recalc.py`). The `dev/` harness is for maintaining the skill and is not required to run it.
+
 
 ## Dev loop
 

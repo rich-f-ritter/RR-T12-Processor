@@ -1,0 +1,7 @@
+{
+  "name": "rr-t12-processor",
+  "version": "1.0.0",
+  "description": "Replicate and improve on RedIQ for multifamily underwriting intake: turn raw T12s/operating statements and a rent roll into a standardized, editable chart of accounts, a stitched multi-period operating history, a one-lined rent roll, an enhanced unit mix with HelloData market-rent indicators, lease-trend analysis, and a rent-roll-to-T12 reconciliation — all paste-ready for the TMG model.",
+  "author": { "name": "Rich Ritter" },
+  "keywords": ["multifamily", "underwriting", "rediq", "t12", "rent-roll", "real-estate", "acquisitions"]
+}

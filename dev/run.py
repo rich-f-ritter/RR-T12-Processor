@@ -22,7 +22,7 @@ import argparse, os, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKILL = ROOT / "rr-t12-processor"
+SKILL = ROOT / "skills" / "rr-t12-processor"
 TESTDATA = ROOT / "dev" / "testdata"
 OUT = ROOT / "dev" / "out"
 sys.path.insert(0, str(ROOT / "dev"))
