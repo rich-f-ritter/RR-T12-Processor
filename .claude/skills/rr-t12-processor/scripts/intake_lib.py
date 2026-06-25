@@ -490,8 +490,10 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
 
     c_unit     = (col("bldg-unit", "unit number", "unit no")
                   or col("unit", exclude=("type", "sq", "status")) or 1)
-    c_unittype = col("unit type", "floor plan", "floorplan", "plan type", "plan")
-    c_sqft     = col("sq ft", "sqft", "square")
+    c_unittype = col("unit type", "floor plan", "floorplan", "plan type", "plan",
+                     "type", exclude=("resident", "charge", "sq", "lease", "status"))
+    c_sqft     = col("sq ft", "sqft", "sq. ft", "sq feet", "sq. feet", "sq footage",
+                     "square", "sq.", "area")
     c_status   = col("unit status", "lease status", "status")
     c_res      = col("resident name", "tenant name", "name", "resident", "tenant",
                      exclude=("unit", "floor"))
@@ -501,7 +503,11 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
     c_emo      = col("expected move-out", "expected move out", "move-out", "move out")
     c_market   = col("market rent", "market")
     c_ledger   = col("ledger")
-    c_charge   = col("charge code", "charge")
+    # A real charge-code (BLOCK) column is "Charge Code"/"Charge". Do NOT let a flat
+    # summary column like "Other Charges"/"Total Charges" trigger block mode (it would
+    # look for charge sub-rows that don't exist -> 0 units on a flat/wide roll).
+    c_charge   = col("charge code") or col("charge",
+                     exclude=("other", "total", "misc", "addl", "monthly", "rec ", "summary"))
     c_sched    = col("scheduled charge", "scheduled", "amount", "charge amt")
     c_actual   = col("actual charge", "actual")
 
