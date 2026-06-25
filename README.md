@@ -39,7 +39,13 @@ dev/                        ← local dev harness (NOT part of the shipped skill
   T12 + rent roll (+ HelloData CSV) and ask for the underwriting intake.
 - **Account-wide:** upload the packaged skill zip in **claude.ai → Customize → Skills**
   and enable it; it then loads in every cloud session, on any repo. (`SKILL.md` sits at
-  the zip root, as the uploader expects.)
+  the zip root, as the uploader expects.) Cut a fresh zip from the latest `main` with:
+
+  ```bash
+  bash dev/package_skill.sh      # -> rr-t12-processor-skill.zip (SKILL.md at root)
+  ```
+
+  Re-upload that whenever you want the account-wide copy to catch up to `main`.
 
 Note: `/plugin` is **not** available in Claude Code on the web — the `.claude/skills/`
 location above is the correct web mechanism (desktop/CLI users could alternatively wrap
