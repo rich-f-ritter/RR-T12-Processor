@@ -1235,15 +1235,22 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
     cnote = ("RR contract (Rent + amenity rent) \u2194 T12 contract net of vacancy "
              "(Rentinc+LtL+Vac+NonRev)" if has_amen else
              "RR contract rent \u2194 T12 contract net of vacancy (Rentinc+LtL+Vac+NonRev)")
-    agpr_note = ("RR avg contract rent \u00d7 TOTAL units \u00d712 (gross potential \u2014 vacant units "
-                 "grossed up) \u2194 T12 latest-month AGPR \u00d712 (Rentinc+LtL).")
+    n_vac = max(0, n_units - n_occ)
+    # The reconciliation reads as a LADDER so AGPR is never a number from nowhere:
+    #   occupied contract  ->  + vacant units grossed up = gross potential (monthly)  ->  x12 = AGPR.
+    gp_note = (f"Occupied contract rent + the {n_vac} vacant unit(s) grossed up to the "
+               f"average: ${avg_contract:,.0f} avg contract \u00d7 {n_units} units = ${rr_agpr:,.0f}/mo. "
+               f"(T12 side = latest month, Rentinc+LtL.)")
+    agpr_note = (f"The gross-potential line above \u00d7 12:  ${avg_contract:,.0f} avg contract \u00d7 "
+                 f"{n_units} units \u00d7 12 = ${rr_agpr*12:,.0f}.  (T12 side = latest-month "
+                 f"Rentinc+LtL \u00d7 12.)")
     if has_amen:
-        agpr_note += (" Amenity rent is IN contract rent \u2014 it is not a separate T12 line, "
-                      "and including it ties RR contract closer to AGPR.")
+        agpr_note += " Amenity rent is included in contract rent (it is not a separate T12 line)."
     lines = [
         ReconLine("Gross Market Rent (asking), monthly", rr_market, rentinc, mkt_note),
         ReconLine(clabel, rr_contract, econ_contract, cnote),
-        ReconLine("T1 AGPR, annualized", rr_agpr * 12, agpr_t1 * 12, agpr_note),
+        ReconLine("Gross Potential Rent (ALL units), monthly", rr_agpr, agpr_t1, gp_note),
+        ReconLine("T1 AGPR, annualized  (gross potential \u00d7 12)", rr_agpr * 12, agpr_t1 * 12, agpr_note),
         ReconLine("Other Income (recurring), monthly", rr_other,
                   t12.code_total("OI", midx) + t12.code_total("park", midx)
                   + t12.code_total("RF", midx) + t12.code_total("RT", midx)
