@@ -1147,6 +1147,25 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                 f"Standardized NOI for {t['label']} (${t['comp_noi']:,.0f}) differs from the "
                 f"operator's reported Net Operating Income (${t['rep_noi']:,.0f}) by ${gap:,.0f} "
                 f"-- a line crossed the NOI boundary in categorization; review the Code column.")
+    # Ambiguous categorizations: lines the categorizer could only place weakly (CAM/
+    # amenity fees, generic 'other/misc', non-utility 'reimbursement', adjustments).
+    # Surface MATERIAL ones (>= $25k/yr) so the skill ASKS the user to confirm rather
+    # than silently trusting the guess. (See SKILL.md "Confirm ambiguous categorizations".)
+    _seen_amb = set()
+    for item in il.unified_lines(st):
+        if item.get("type") != "line":
+            continue
+        why = am.ambiguity_reason(item["name"], item.get("code"))
+        if not why:
+            continue
+        v = [x for x in item["values"] if isinstance(x, (int, float))]
+        annual = sum(v[-12:])                      # most-recent-12-month run-rate
+        key = (item["name"], item.get("code"))
+        if abs(annual) >= 25000 and key not in _seen_amb:
+            _seen_amb.add(key)
+            rec.flags.append(
+                f"CONFIRM categorization: '{item['name']}' (~${annual:,.0f}/yr) is coded "
+                f"'{item.get('code')}' — {why}. Verify this code before underwriting.")
     rec.charge_t12 = il.match_charges_to_t12(st, rr)
     if hd:
         rec.hd_fee_netting = {

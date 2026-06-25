@@ -120,9 +120,9 @@ def _family_from_section(section_hint):
                  r"search engine|internet listing|\bils\b|locator|leasing.*marketing", s): return "marketing"
     if re.search(r"general.*admin|administ|g\s*&\s*a|g/a|office", s):             return "admin"
     if re.search(r"utilit", s):                                                   return "utilities"
-    if re.search(r"make[\s\-/]*ready|redecorat", s):                             return "makeready"
-    if re.search(r"maintenance|repairs|r\s*&\s*m|turnover", s):                   return "maintenance"
-    if re.search(r"management fee|mgmt fee|management$", s):                       return "mgmt"
+    if re.search(r"make[\s\-/]*ready|redecorat|turn[\s\-]?over|\bturnover\b|unit turn", s): return "makeready"
+    if re.search(r"maintenance|repairs|r\s*&\s*m", s):                            return "maintenance"
+    if re.search(r"manage?ment fee|mgmt fee|manage?ment$", s):                     return "mgmt"
     if re.search(r"tax|insurance", s):                                            return "taxins"
     if re.search(r"contract", s):                                                 return "contract"
     if re.search(r"other income|other revenue|misc.*income|ancillary", s):       return "otherinc"
@@ -138,6 +138,8 @@ def _family_from_section(section_hint):
 # 3. WITHIN-FAMILY SPLITTERS (keyword refinement once the family is known)
 # ---------------------------------------------------------------------------
 def _split_payroll(n):
+    # Payroll *processing* fees (ADP/Paychex/service charge) are an admin cost, not wages.
+    if re.search(r"processing fee|payroll service|payroll fee|\badp\b|paychex", n):  return "GA"
     # Employee apartment concession / housing allowance = value of a free/discounted
     # employee unit. RedIQ books this as a payroll bonus (PBo), not base payroll.
     if re.search(r"concession|apartment allowance|employee (apartment|unit|housing)|"
@@ -193,8 +195,26 @@ def _split_otherinc(n):
 
 def _split_rubs(n):
     if re.search(r"water|sewer", n):                                             return "RWS"
-    if re.search(r"trash|garbage", n):                                           return "RT"
-    return "RF"
+    if re.search(r"trash|garbage|refuse", n):                                    return "RT"
+    if re.search(r"electric|\bgas\b|\butilit|util\.|pest", n):                    return "RF"
+    # A "Reimbursement Income" section also collects non-utility ancillary fees —
+    # package delivery, credit builder, deposit alternative, cable/internet income,
+    # CAM/amenity fees, renters-insurance reimbursement. Those are Other Income (or
+    # cable), NOT a RUBS utility recovery, so defer to the other-income splitter.
+    return _split_otherinc(n)
+
+def _split_contract(n):
+    # Bulk resident cable/internet delivered property-wide is a utility cost (UC),
+    # not a service contract (operator/RedIQ convention).
+    if re.search(r"cable|internet", n):                                          return "UC"
+    # Office / technology / admin service contracts -> G&A (RedIQ convention);
+    # physical property-operations contracts (cleaning, landscaping, pest, pool,
+    # security patrol, valet, elevator) stay Contract.
+    if re.search(r"\bsaas\b|software|web ?site|copier|answering service|key.?track|"
+                 r"access control|fire protection monitor|fire monitor|emergency phone|"
+                 r"office tele|telecomm|furniture|equipment rental|legal liability|"
+                 r"renters legal", n):                                           return "GA"
+    return "cont"
 
 def _split_rentadj(n):
     if re.search(r"non.?revenue|down unit|model unit|employee unit|office unit|"
@@ -305,17 +325,66 @@ def _override(name):
     # billing-PROGRAM cost the property pays to run RUBS — a "rebill service" or "billing
     # fee" line (e.g. "Utility Rebill Services", "Utility Rebill Service Fees") — is a
     # genuine utility EXPENSE, not a resident recovery, so it maps to UF (Utilities Fees).
-    if re.search(r"rebill|reimburs", n):
+    # Utility "Rebill" / "Reimbursed" lines are RUBS recovery REVENUE regardless of which
+    # side of the statement the operator parks them on. SCOPE this to genuine UTILITY
+    # recoveries — a bare "reimbursement" (vacation, renters-insurance, deposit, cable) is
+    # NOT a RUBS recovery and must fall through to normal section/keyword logic. The
+    # billing-PROGRAM cost ("rebill service"/"billing fee") is a utility EXPENSE -> UF.
+    util = re.search(r"water|sewer|electric|\bgas\b|utilit|trash|refuse|garbage|pest|"
+                     r"\brubs\b|rebill", n)
+    if re.search(r"rebill|reimburs|recover", n) and util:
         if re.search(r"\b(fee|service)s?\b", n):          return "UF"
         if re.search(r"water|sewer", n):                  return "RWS"
         if re.search(r"trash|refuse|garbage", n):         return "RT"
         return "RF"
+    # Management fee -> mgt regardless of section/spelling ('Managment' typo seen in the
+    # wild). Requires 'fee' so 'asset/property management PAYROLL' lines stay payroll.
+    if re.search(r"manage?ment fee", n):
+        return "mgt"
+    # Ground/land lease is NOT a real-estate tax (it lands in a 'Taxes & Insurance'
+    # section but is a land-rent expense) -> G&A, per RedIQ.
+    if re.search(r"ground lease|land lease", n):
+        return "GA"
     # forced-placed / tenant-liability insurance EXPENSE -> G&A (per methodology), not Contract/Insurance
     if re.search(r"forced.?placed|tenant liability insurance|legal liability insurance", n):
         return "GA"
     # uniforms -> G&A even when filed under payroll (RedIQ convention; it's a supply)
     if re.search(r"uniform", n):
         return "GA"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 5b. AMBIGUITY FLAGS — lines the categorizer places only weakly, where the
+#     income-vs-expense or sub-bucket call is a genuine judgment. The skill should
+#     ASK the user to confirm these rather than silently trust the guess.
+# ---------------------------------------------------------------------------
+_AMBIGUOUS = [
+    (r"\bcam\b|common area maintenance|amenity fee",
+     "amenity/CAM fee — Other Income (OI) vs a resident recovery (RF); operator-specific"),
+    (r"miscellaneous|\bmisc\b|sundry|\bother (income|revenue|charges?)\b",
+     "generic 'miscellaneous / other income' line"),
+    (r"\bother (expense|expenses|operating)\b",
+     "generic 'other expense' line"),
+    (r"\badjustment", "generic 'adjustment' line — may belong below NOI"),
+]
+def ambiguity_reason(name, code=None):
+    """Return a short reason string if a line is genuinely ambiguous to categorize
+    (so the skill should confirm with the user), else None. Lines with a clear utility
+    signal route deterministically and are not flagged."""
+    n = (name or "").strip().lower()
+    if not n:
+        return None
+    # clearly-determined adjustments aren't ambiguous even if they mention 'other income'
+    if re.search(r"write.?off|bad debt|loss to lease|gain to lease|concession|vacanc", n):
+        return None
+    util = re.search(r"water|sewer|electric|\bgas\b|utilit|trash|refuse|garbage|pest|"
+                     r"\brubs\b|rebill", n)
+    if re.search(r"reimburs|recover", n) and not util:
+        return "non-utility 'reimbursement/recovery' — Other Income vs a cost recovery"
+    for pat, why in _AMBIGUOUS:
+        if re.search(pat, n):
+            return why
     return None
 
 
@@ -368,7 +437,7 @@ def categorize_t12_line(name, side, section_hint=None, acct_number=None):
     if fam == "maintenance": return _split_maintenance(n)
     if fam == "mgmt":        return "mgt"
     if fam == "taxins":      return _split_taxins(n)
-    if fam == "contract":    return "cont"
+    if fam == "contract":    return _split_contract(n)
     if fam == "otherinc":    return _split_otherinc(n)
     if fam == "rubs":        return _split_rubs(n)
     if fam == "concession":  return "conc"

@@ -177,6 +177,18 @@ true market rent from the unit mix (new-lease + HelloData executed) and Lease Tr
 Then read the charge-code map — especially any RUBS/valet-trash recovery that could net
 against an expense or book as Other Income. Resolve the flags before underwriting.
 
+### Confirm ambiguous categorizations (ASK the user — do not silently guess)
+Some GL lines cannot be placed with confidence — an **amenity/CAM fee** (Other Income vs a
+resident recovery), a generic **"miscellaneous / other"** line, a **non-utility
+"reimbursement"**, or an **"adjustment"**. The build surfaces material ones (≥ $25k/yr) on
+the Reconciliation **"⚑ Flags for Underwriting"** as **`CONFIRM categorization: …`** items,
+showing the line, its $/yr, and the code the skill guessed. When any of these appear, **stop
+and ASK the user** what each line actually is (e.g., "is this CAM line a resident cost
+recovery or just other income?") and apply their answer to the Code column **before** treating
+the intake as final — rather than trusting the guess. A quick way to resolve them is to check
+the **property website** (e.g., a mandatory "amenity fee" on the cost-estimate widget). Only
+the genuinely ambiguous, material lines are flagged this way; the rest categorize deterministically.
+
 The **"Charge → T12 Placement (empirical contract-rent test)"** section settles *what is in
 contract rent* by evidence, not by charge name: each rent-roll charge is matched (by monthly
 $, and name where the code is mnemonic) to the T12 line it actually lands on — searching

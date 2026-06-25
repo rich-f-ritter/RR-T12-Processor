@@ -131,14 +131,26 @@ def _month_label(v):
     if _is_date(v):
         return v.strftime("%b %Y"), (v.year, v.month)
     s = _s(v)
-    # try to parse 'Jun 2025', 'Jun-2025', '2025-06', etc.
-    for fmt in ("%b %Y", "%b-%Y", "%B %Y", "%m/%Y", "%Y-%m"):
+    # try to parse 'Jun 2025', 'Jun-2025', '2025-06', '04/2026', '04-2026', etc.
+    for fmt in ("%b %Y", "%b-%Y", "%B %Y", "%m/%Y", "%m-%Y", "%Y-%m", "%Y/%m"):
         try:
             d = _dt.datetime.strptime(s, fmt)
             return d.strftime("%b %Y"), (d.year, d.month)
         except ValueError:
             continue
     return s, (9999, 99)
+
+
+def _looks_like_month(v):
+    """True if v is a usable month header — anything `_month_label` can parse
+    (a real date, an alpha label like 'Jun 2025', or a numeric 'MM/YYYY' /
+    'YYYY-MM'). Keeps header/column detection in lock-step with the parser so a
+    Yardi 'Trailing P&L' with '05/2025'-style headers isn't read as month-less."""
+    if _is_date(v):
+        return True
+    if not _s(v):
+        return False
+    return _month_label(v)[1] != (9999, 99)
 
 
 # ===========================================================================
@@ -217,11 +229,7 @@ def parse_t12(path: str) -> T12:
     hdr_row = None
     for r in range(1, min(ws.max_row, 20) + 1):
         rowvals = [ws.cell(r, c).value for c in range(2, min(ws.max_column, 16) + 1)]
-        n_dates = sum(1 for v in rowvals if _is_date(v))
-        n_monthish = sum(
-            1 for v in rowvals
-            if _is_date(v) or re.match(r"^[A-Za-z]{3,9}[ \-]\d{4}$", _s(v))
-        )
+        n_monthish = sum(1 for v in rowvals if _looks_like_month(v))
         if n_monthish >= 3:
             hdr_row = r
             break
@@ -230,12 +238,10 @@ def parse_t12(path: str) -> T12:
 
     # --- month columns: the contiguous run of month-labelled header cells
     #     (may start at col B, col C, ... — wherever the labels end) ---
-    def _ismonth(v):
-        return _is_date(v) or bool(re.match(r"^[A-Za-z]{3,9}[ \-]\d{4}$", _s(v)))
     months, month_cols = [], []
     for c in range(1, ws.max_column + 1):
         v = ws.cell(hdr_row, c).value
-        if _ismonth(v):
+        if _looks_like_month(v):
             lbl, key = _month_label(v)
             months.append((lbl, key)); month_cols.append(c)
         elif months:
@@ -298,6 +304,16 @@ def parse_t12(path: str) -> T12:
         name = _s(ws.cell(r, desc_col).value)
         if not gl and not name and gl_raw:
             name = gl_raw                 # section/subtotal label sitting in the gl column
+        # Yardi/Entrata "Ledger Account" exports fuse the GL number into the name in
+        # a single column ("4000:Rental Income", "6100 - Payroll") with no separate
+        # number column. Split a leading code so section/leaf/rollup detection and
+        # categorization behave exactly as in a two-column layout. Requires a 3-6
+        # digit code (optional .NN/-NN subaccount) followed by ':' or '-', so plain
+        # names and 'Total …' subtotals are untouched.
+        if not gl and name:
+            m = re.match(r"^(\d{3,6}(?:[.\-]\d{1,4})*)\s*[:\-]\s*(\S.*)$", name)
+            if m:
+                gl, name = m.group(1), m.group(2).strip()
         vals = [_num(ws.cell(r, c).value) for c in month_cols]
         has_vals = any(abs(v) > 1e-9 for v in vals)
         if not gl and not name and not has_vals:
