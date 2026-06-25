@@ -1191,7 +1191,15 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
 
     # rent-roll scheduled charge totals by our code
     rr_market = sum(u.market_rent for u in rr.units)
-    rr_contract = sum(u.contract_rent for u in rr.units)
+    rr_contract = sum(u.contract_rent for u in rr.units)   # OCCUPIED contract rent (vacant = 0)
+    # AGPR is GROSS POTENTIAL — every unit, not just occupied. The T12 side (Rentinc+LtL)
+    # already covers all units, so the RR side must gross the vacant units up too, or it
+    # understates AGPR by the vacant count. Gross-potential contract rent = average occupied
+    # contract rent x TOTAL units  (equivalently: occupied contract + vacant x avg contract).
+    n_occ   = sum(1 for u in rr.units if u.contract_rent > 0)
+    n_units = len(rr.units)
+    avg_contract = (rr_contract / n_occ) if n_occ else 0.0
+    rr_agpr = avg_contract * n_units                        # full-occupancy (gross potential) contract rent
     rr_other = sum(u.other_income for u in rr.units)
     amenity = sum(v for u in rr.units for cc, v in u.charges.items() if "amenity" in cc.lower())
 
@@ -1227,14 +1235,15 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
     cnote = ("RR contract (Rent + amenity rent) \u2194 T12 contract net of vacancy "
              "(Rentinc+LtL+Vac+NonRev)" if has_amen else
              "RR contract rent \u2194 T12 contract net of vacancy (Rentinc+LtL+Vac+NonRev)")
-    agpr_note = "RR contract \u00d712 \u2194 T12 latest-month AGPR \u00d712 (Rentinc+LtL)."
+    agpr_note = ("RR avg contract rent \u00d7 TOTAL units \u00d712 (gross potential \u2014 vacant units "
+                 "grossed up) \u2194 T12 latest-month AGPR \u00d712 (Rentinc+LtL).")
     if has_amen:
         agpr_note += (" Amenity rent is IN contract rent \u2014 it is not a separate T12 line, "
                       "and including it ties RR contract closer to AGPR.")
     lines = [
         ReconLine("Gross Market Rent (asking), monthly", rr_market, rentinc, mkt_note),
         ReconLine(clabel, rr_contract, econ_contract, cnote),
-        ReconLine("T1 AGPR, annualized", rr_contract * 12, agpr_t1 * 12, agpr_note),
+        ReconLine("T1 AGPR, annualized", rr_agpr * 12, agpr_t1 * 12, agpr_note),
         ReconLine("Other Income (recurring), monthly", rr_other,
                   t12.code_total("OI", midx) + t12.code_total("park", midx)
                   + t12.code_total("RF", midx) + t12.code_total("RT", midx)
@@ -1243,10 +1252,11 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
     ]
 
     flags = []
-    # amenity-rent verification (the AGPR question)
+    # amenity-rent verification (the AGPR question) — on the grossed-up (all-unit) basis
     if amenity > 0 and agpr_t1:
-        gap_with = rr_contract - agpr_t1
-        gap_wo = rr_contract - amenity - agpr_t1
+        rr_agpr_wo = ((rr_contract - amenity) / n_occ * n_units) if n_occ else 0.0
+        gap_with = rr_agpr - agpr_t1
+        gap_wo = rr_agpr_wo - agpr_t1
         flags.append(
             f"Amenity rent ${amenity:,.0f}/mo is mapped to Rental Income / contract rent "
             f"(it appears nowhere else on the T12). Including it narrows the gap to T1 AGPR "
