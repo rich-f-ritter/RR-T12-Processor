@@ -1270,6 +1270,32 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
         safe = "".join(ch if ch.isalnum() else "_" for ch in prop_name).strip("_")
         out_path = f"/mnt/user-data/outputs/{safe}__Underwriting_Intake.xlsx"
     wb.save(out_path)
+
+    # ---- COMPLETENESS GATE: never present a half-built workbook silently. ----
+    # If a core input layout wasn't recognized, the build still "succeeds" but tabs come
+    # out empty. Detect that loudly so the caller refuses to deliver (see SKILL.md
+    # "Completeness gate"). The marker line is machine-readable; the banner is on stderr.
+    problems = []
+    if not getattr(st, "monthkeys", None):
+        problems.append("T12 produced NO month columns — the statement layout wasn't recognized.")
+    elif not any(r.rtype == "line" for f in st.files for r in f.t12.rows):
+        problems.append("T12 produced NO categorized line items.")
+    if not rr.units:
+        problems.append("Rent roll parsed 0 units — the rent-roll layout wasn't recognized; "
+                        "Dashboard, unit mix, occupancy and reconciliation are EMPTY.")
+    elif not mix:
+        problems.append("Unit mix is empty (rent roll + HelloData produced no floor-plan rows).")
+    if problems:
+        print("\n".join(["", "=" * 70,
+              "⚠  BUILD INCOMPLETE — DO NOT DELIVER THIS WORKBOOK.",
+              "Missing / unrecognized:"] + [f"  - {p}" for p in problems]
+              + ["Tell the user exactly what's missing and what's needed (usually an",
+                 "unrecognized T12/rent-roll layout to fix in the parser), then stop.",
+                 "=" * 70, ""]), file=sys.stderr)
+        print("BUILD_INCOMPLETE: " + " | ".join(problems))
+    else:
+        print(f"BUILD_OK: {len(rr.units)} units, {len(mix)} floor plans, "
+              f"{len(st.monthkeys)} months.")
     return out_path
 
 

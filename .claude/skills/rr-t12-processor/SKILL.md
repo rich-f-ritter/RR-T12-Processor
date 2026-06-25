@@ -155,6 +155,28 @@ Expect `status: success`, `total_errors: 0`. The workbook ships with ~1,000–2,
 formulas (more with a long history); any `#REF!`/`#NAME?` means a tab reference broke —
 fix before delivering.
 
+### 2b. Completeness gate — VERIFY BEFORE YOU DELIVER (non-negotiable)
+**Never hand the user a half-built workbook.** A build can "succeed" yet be empty if a
+T12 or rent-roll **layout wasn't recognized** (e.g. numeric `MM/YYYY` headers, fused
+`CODE:Name` accounts, a flat "Rent Roll Summary", bare `Type`/`Sq. Feet` columns). The
+build prints a status line you MUST read:
+- **`BUILD_OK: N units, M floor plans, K months.`** → proceed.
+- **`BUILD_INCOMPLETE: …`** (and a banner on stderr) → **DO NOT DELIVER.**
+
+Before presenting the file, confirm ALL of these are non-empty/sane (open the workbook and
+check, don't assume):
+1. **Dashboard** — unit count > 0, a populated **UNIT MIX** table, occupancy %, total SF.
+2. **T12 Categorized** — line items with codes across the month columns.
+3. **OS Summary** — EGR / OpEx / **NOI** are non-zero (run the recalc first; SUMIFS are
+   blank until recalced — a blank OS Summary usually means *recalc wasn't run*, not that
+   the data is missing).
+4. **Reconciliation** — the RR↔T12 ties populated; NOI tie present.
+
+If **anything** is empty or fails: **do not send the file.** Tell the user plainly **what
+is missing and what you need to finish it** (almost always: an unrecognized input layout to
+teach the parser, or a missing/expected input). Fix it (or ask), rebuild, re-verify — then
+deliver. A partial deliverable is worse than a clear "here's what I need."
+
 ### 3. Review the categorization
 
 Open `T12 Categorized` and scan the **Code** column. The categorizer is a strong first
