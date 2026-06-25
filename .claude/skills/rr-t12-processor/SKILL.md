@@ -11,12 +11,20 @@ visible, **every line's category editable in one place**, the standardized OS Su
 rolling up **live** as codes change, and **multiple statements stitched into one
 continuous operating history**.
 
-Read the **`multifamily-deal-analysis`** skill first — it defines the methodology (RedIQ
-code definitions, contract-rent = AGPR terminology, market-rent data hierarchy,
-expense-to-income netting) that this skill operationalizes. This skill **stops at
-intake**: it produces the workbook and the model paste targets; it does **not** populate
-the underwriting model. Deep submarket comp work belongs to
-`submarket-comp-template-execution`.
+This skill is **self-contained** and covers **intake only**. The methodology it
+operationalizes — RedIQ code definitions, contract-rent = AGPR terminology, the
+market-rent data hierarchy, and expense-to-income netting — is documented in
+`references/account_mapping.md`; you do **not** need any other skill to run it.
+
+**Scope guardrails (read before asking for inputs):**
+- This skill works **only on the SUBJECT property** — its own operating statements, rent
+  roll, and (optionally) its own HelloData. It has **nothing to do with a competitive set
+  or submarket comps**. Do **not** request comp/competitor data, and do **not** invoke or
+  defer to a submarket-comp skill.
+- Any **HelloData** here is the **subject property's** "Unit Details" CSV, joined to the
+  subject's rent roll by unit number — never a competitive set.
+- It **stops at intake**: it produces the standardized workbook and the model paste
+  targets; it does **not** populate the underwriting model.
 
 ## Required inputs
 
