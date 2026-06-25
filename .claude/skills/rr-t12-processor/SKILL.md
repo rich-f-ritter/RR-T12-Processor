@@ -165,11 +165,15 @@ build prints a status line you MUST read:
 
 Before presenting the file, confirm ALL of these are non-empty/sane (open the workbook and
 check, don't assume):
-1. **Dashboard** — unit count > 0, a populated **UNIT MIX** table, occupancy %, total SF.
-2. **T12 Categorized** — line items with codes across the month columns.
-3. **OS Summary** — EGR / OpEx / **NOI** are non-zero (run the recalc first; SUMIFS are
-   blank until recalced — a blank OS Summary usually means *recalc wasn't run*, not that
-   the data is missing).
+1. **Dashboard** — unit count > 0, a populated **UNIT MIX** table, occupancy %, total SF,
+   and **cached EGR / OpEx / NOI** (the Dashboard caches these, so they're the reliable
+   programmatic check — read them with openpyxl `data_only=True`).
+2. **T12 Categorized** — line items with codes and non-zero month values.
+3. **OS Summary** — the live SUMIFS code-formulas are present and well-formed. NOTE: the
+   LibreOffice recalc does **not** cache OS Summary's cross-sheet SUMIFS (they read blank
+   via openpyxl); they populate the instant the file opens in Excel/Sheets. So verify the
+   **formulas exist** and trust the **Dashboard's** cached EGR/OpEx/NOI for the numbers —
+   do NOT conclude "incomplete" just because openpyxl shows OS Summary blank.
 4. **Reconciliation** — the RR↔T12 ties populated; NOI tie present.
 
 If **anything** is empty or fails: **do not send the file.** Tell the user plainly **what
