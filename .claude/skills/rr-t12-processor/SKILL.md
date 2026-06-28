@@ -184,6 +184,14 @@ check, don't assume):
    NOI **matching the operator's reported NOI** for each statement (a gap = a bug; see the
    `BUILD_OK_BUT_NOI_UNTIED` note above). The AGPR line is gross potential (avg contract ×
    ALL units × 12), not occupied-only.
+5. **HelloData fee check (do not skip).** If the Reconciliation flags an **HD-asking-above-base
+   gap**, you MUST evaluate it before delivering: check the property **website** (is it a
+   Greystar / "Total Monthly Leasing Price" or other all-in advertiser?) and compare the gap
+   to the rent-roll's **candidate flat fees**. If HD is carrying a bundle, re-run with
+   `--hd-fee-offset <$/mo>`. Don't ship HD gross without resolving the question. See
+   `references/hd_fee_detection.md` (Greystar bundles → net; Aura → don't).
+6. **Bed/bath spot-check.** Confirm the unit mix beds are sane (studios = 0, not mis-inferred
+   from an operator plan prefix like `bc_`); they should source from HelloData.
 
 If **anything** is empty or fails: **do not send the file.** Tell the user plainly **what
 is missing and what you need to finish it** (almost always: an unrecognized input layout to
