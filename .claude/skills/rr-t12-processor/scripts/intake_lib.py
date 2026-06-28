@@ -841,6 +841,10 @@ _LETTER_BED = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
 def infer_bed_bath(plan: str, hd: Optional[HelloData]):
     """Return (bed, bath, source) for a floor-plan id."""
     base = _norm_plan(plan)
+    # Strip a leading building/operator prefix ("bc_S1" -> "S1") so it matches HelloData's
+    # bare plan id and the letter convention reads the REAL first letter (S=studio), not the
+    # 'b' of the prefix (which would wrongly infer 2 beds).
+    base = re.sub(r"^[A-Za-z]{1,4}_", "", base)
     # 1) HelloData exact / base match
     if hd:
         for key in (base, re.match(r"^[A-Za-z]+\d+", base).group(0) if re.match(r"^[A-Za-z]+\d+", base) else base):
