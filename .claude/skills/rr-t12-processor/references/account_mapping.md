@@ -125,6 +125,29 @@ NOI-neutral reclassifications and surfaced these lessons:
 - **Month-to-Month premiums:** RedIQ booked these to `OI` here, not `Rentinc` — counter to
   the quirk note above. Operator-dependent; low-dollar.
 
+## RedIQ cross-check learnings (Alta Berry Creek, Jun 2026)
+Validated against the operator's **corrected** RedIQ export (after the Boiler Rebill fix).
+**EGR / OpEx / NOI tied to the dollar ($4,289,688 / $3,742,062 / $547,626).** All 13 revenue
+codes matched **exactly**, and the divergences were 5 NOI-neutral OpEx reclasses totaling well
+under 1% — no errors in either direction:
+- **Boiler Rebill → `RF` confirmed on both sides (`RF` = $277,625 exact).** The one real model
+  error caught on this deal — the tenant rebill of the boiler maintenance contract is RUBS
+  **revenue** (`RF`), not a `cont` expense. The corrected RedIQ now agrees. (The matching boiler
+  *cost* — "Boiler Contract" $49,500 — stays in `cont`.) This is the canonical "a negative in
+  the expense section is often income" case; see the quirk note above.
+- **Paint *supplies* vs paint *contractor* (OPEN — $10,354, largest divergence).** RedIQ keeps
+  **Paint Contractor** (labor) in `turn` (make-ready) but **Painting Supplies** in `inter/exte`
+  (general R&M). This skill's maintenance splitter routes anything containing "paint" → `turn`,
+  so it pulls Painting Supplies into turnover. Defensible to refine: `paint` + supply/material
+  context → `inter/exte`; `paint` + contractor/labor/make-ready → `turn`. NOI-neutral.
+- **Internet Access → `GA` vs `UC` (house-style, $4,320).** Same internet split as The Preserve,
+  except RedIQ folded internet into `UF` there and `UC` here — RedIQ is internally inconsistent
+  on this, so not worth chasing. NOI-neutral.
+- **Minor (<$1k each, NOI-neutral):** Fuel & Propane (mine `inter/exte` / RedIQ `UC`);
+  Pool Supplies and Preventative Maintenance (mine `inter/exte` / RedIQ `cont`); Safety & Fire
+  Supplies (mine `cont` / RedIQ `inter/exte`); Other Recreational Amenities (mine `GA` / RedIQ
+  `inter/exte`). All judgment calls between R&M / contract / utilities buckets.
+
 ## Detailed vs. summary T12
 A **detailed** T12 has separate GL lines for concessions, loss-to-lease, RUBS fees,
 parking, payroll burden/bonuses, insurance, etc. — the categorizer separates each

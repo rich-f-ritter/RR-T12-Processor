@@ -164,6 +164,12 @@ def _split_makeready(n):
     return "turn"
 
 def _split_maintenance(n):
+    # Paint *supplies/materials* is general R&M (interior) UNLESS the line is explicitly a
+    # turnover/make-ready item. RedIQ splits a bare "Painting Supplies" -> R&M but keeps
+    # "Turnover - Painting Supplies" -> turn. Validated on Alta Berry Creek (R&M) and Canyon
+    # Ridge (turn). Carve the non-turnover supplies out before the turn check below.
+    if (re.search(r"paint", n) and re.search(r"suppl|material", n)
+            and not re.search(r"turn|make.?ready|redecorat", n)):                return "inter/exte"
     # turnover: make-ready / unit turn work
     if re.search(r"turn|make.?ready|carpet clean|paint|interior repairs?.*unit|"
                  r"unit clean|vinyl|resurfac|key|lock", n):                      return "turn"
