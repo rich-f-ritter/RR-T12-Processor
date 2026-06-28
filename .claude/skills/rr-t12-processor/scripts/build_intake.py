@@ -1155,17 +1155,27 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
     for item in il.unified_lines(st):
         if item.get("type") != "line":
             continue
-        why = am.ambiguity_reason(item["name"], item.get("code"))
-        if not why:
-            continue
         v = [x for x in item["values"] if isinstance(x, (int, float))]
         annual = sum(v[-12:])                      # most-recent-12-month run-rate
         key = (item["name"], item.get("code"))
-        if abs(annual) >= 25000 and key not in _seen_amb:
+        # (a) ambiguously-named lines (CAM/amenity, generic other/misc, non-utility reimbursement)
+        why = am.ambiguity_reason(item["name"], item.get("code"))
+        if why and abs(annual) >= 25000 and key not in _seen_amb:
             _seen_amb.add(key)
             rec.flags.append(
                 f"CONFIRM categorization: '{item['name']}' (~${annual:,.0f}/yr) is coded "
                 f"'{item.get('code')}' — {why}. Verify this code before underwriting.")
+        # (b) a NET-NEGATIVE expense line is often INCOME (a resident recovery / contra booked
+        #     against expense — tenant rebills, utility passthroughs). Surface materially- and
+        #     consistently-negative expense lines so the right ones get reclassified to revenue.
+        if item.get("side") == "expense" and key not in _seen_amb:
+            nz = [x for x in v if abs(x) > 1e-9]
+            if nz and annual <= -2500 and sum(1 for x in nz if x < 0) / len(nz) >= 0.6:
+                _seen_amb.add(key)
+                rec.flags.append(
+                    f"CONFIRM categorization: '{item['name']}' is a NET-NEGATIVE expense "
+                    f"(~${annual:,.0f}/yr) coded '{item.get('code')}' — a negative expense is "
+                    f"often income (a resident recovery/contra); confirm whether it belongs in revenue.")
     rec.charge_t12 = il.match_charges_to_t12(st, rr)
     if hd:
         rec.hd_fee_netting = {

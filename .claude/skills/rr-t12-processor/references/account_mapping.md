@@ -91,6 +91,14 @@ Signs come straight from the GL — the rollup is a plain `SUM`, never re-signed
 - **Insurance** always splits out of a combined "Taxes & Insurance" line → `ins`.
 - **Late Fees**: if the line sits in the *Other Income* section it is revenue → `OI`.
   RedIQ sometimes buckets it to `GA`; the editable column lets you match house style.
+- **A NEGATIVE value in an EXPENSE line is often INCOME.** Operators frequently book a
+  resident recovery / pass-through / rebill as a *contra* inside the expense section
+  (e.g. "Resident Utility Passthrough", a tenant rebill of a service contract). A
+  consistently-negative expense line usually belongs in revenue (a RUBS recovery → `RF`/
+  `RWS`/`RT`, or `OI`). The build flags materially- and consistently-negative expense lines
+  with a **`CONFIRM categorization`** note so they get reclassified. (Alta Berry Creek:
+  "Boiler Rebill" — the tenant rebill of the boiler maintenance contract — is income `RF`,
+  not a contract expense; RedIQ had it as `cont`, a model error.)
 
 ## RedIQ cross-check learnings (The Preserve, Jun 2026)
 Validated a full build against the operator's own **RedIQ** Operating Statement (same
