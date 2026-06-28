@@ -298,10 +298,13 @@ def parse_t12(path: str) -> T12:
         gl_col = None
 
     rows, cur_section = [], ""
+    meta_indent = []                      # leading-space depth per appended row (hierarchy signal)
     for r in range(hdr_row + 1, ws.max_row + 1):
         gl_raw = _s(ws.cell(r, gl_col).value) if gl_col else ""
         gl = gl_raw if _is_glnum(gl_raw) else ""
-        name = _s(ws.cell(r, desc_col).value)
+        desc_rawval = ws.cell(r, desc_col).value
+        indent = (len(desc_rawval) - len(desc_rawval.lstrip())) if isinstance(desc_rawval, str) else 0
+        name = _s(desc_rawval)
         if not gl and not name and gl_raw:
             name = gl_raw                 # section/subtotal label sitting in the gl column
         # Yardi/Entrata "Ledger Account" exports fuse the GL number into the name in
@@ -325,9 +328,11 @@ def parse_t12(path: str) -> T12:
             if has_vals:
                 rows.append(T12Row("subtotal", name or "", cur_section,
                                    values=vals, total=sum(vals)))
+                meta_indent.append(indent)
             elif name:
                 cur_section = name
                 rows.append(T12Row("header", name, cur_section))
+                meta_indent.append(indent)
             continue
 
         # row carries a GL account number
@@ -338,12 +343,22 @@ def parse_t12(path: str) -> T12:
             # section header that provides categorization context for its children
             cur_section = name
             rows.append(T12Row("header", name, cur_section))
+            meta_indent.append(indent)
             continue
         if _is_rollup(name, gl):
             # a subtotal that happens to carry an account number (Yardi tree: the
             # '-098/-099' rollup accounts, or 'Total …' / 'Net …' lines). Exclude
             # from postable totals so children aren't double-counted.
             rows.append(T12Row("subtotal", name, cur_section, values=vals, total=sum(vals)))
+            meta_indent.append(indent)
+            continue
+        # STATISTIC row parked in the dollar grid (occupancy %, per-unit rent/count): all
+        # nonzero monthly values are tiny ratios (|v|<5). It's a metric, not a postable
+        # dollar line -> exclude (e.g. Yardi parent 'INCOME' row carrying occupancy 0.83).
+        _nz = [v for v in vals if abs(v) > 1e-9]
+        if _nz and len(_nz) >= 3 and all(abs(v) < 5 for v in _nz):
+            rows.append(T12Row("subtotal", name, cur_section, values=vals, total=sum(vals)))
+            meta_indent.append(indent)
             continue
 
         # real postable (leaf) line
@@ -364,6 +379,19 @@ def parse_t12(path: str) -> T12:
             vals = [-v for v in vals]
         rows.append(T12Row("line", name, cur_section, side, gl, code,
                            vals, sum(vals)))
+        meta_indent.append(indent)
+
+    # PARENT/ROLLUP rows that carry statistic values (per-unit rent) instead of a dollar
+    # total: a 'line' immediately followed (next line row) by a MORE-INDENTED child line is
+    # a parent — exclude it from postable leaves so it doesn't double-count its children.
+    # (The operator's own subtotal already covers the children.) Indentation-gated, so it is
+    # a no-op for exports without leading-space hierarchy.
+    line_pos = [i for i, rr in enumerate(rows) if rr.rtype == "line"]
+    for a in range(len(line_pos) - 1):
+        i, j = line_pos[a], line_pos[a + 1]
+        if meta_indent[j] - meta_indent[i] >= 1:
+            p = rows[i]
+            rows[i] = T12Row("subtotal", p.name, p.section, values=p.values, total=p.total)
 
     return T12(months=months, rows=rows, sheet_name=ws.title, title=title)
 
