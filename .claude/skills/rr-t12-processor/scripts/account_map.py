@@ -333,7 +333,12 @@ def _override(name):
     util = re.search(r"water|sewer|electric|\bgas\b|utilit|trash|refuse|garbage|pest|"
                      r"\brubs\b|rebill", n)
     if re.search(r"rebill|reimburs|recover", n) and util:
-        if re.search(r"\b(fee|service)s?\b", n):          return "UF"
+        # A reimbursement / recovery billed BACK to residents is RUBS REVENUE — even when it
+        # names the "service fee" being recovered ("Utility Rebill Service Fee Reimbursement").
+        # Only the bare service/fee/billing COST the property pays (no reimbursement word) is
+        # a utility EXPENSE -> UF.
+        recovery = re.search(r"reimburs|reimbursed|recover", n)
+        if not recovery and re.search(r"\b(fee|service|billing)s?\b", n):  return "UF"
         if re.search(r"water|sewer", n):                  return "RWS"
         if re.search(r"trash|refuse|garbage", n):         return "RT"
         return "RF"
