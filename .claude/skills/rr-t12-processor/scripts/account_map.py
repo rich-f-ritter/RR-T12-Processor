@@ -121,7 +121,10 @@ def _family_from_section(section_hint):
     if re.search(r"general.*admin|administ|g\s*&\s*a|g/a|office", s):             return "admin"
     if re.search(r"utilit", s):                                                   return "utilities"
     if re.search(r"make[\s\-/]*ready|redecorat|turn[\s\-]?over|\bturnover\b|unit turn", s): return "makeready"
-    if re.search(r"maintenance|repairs|r\s*&\s*m", s):                            return "maintenance"
+    # "Recreational Amenities" / grounds-upkeep sections are physical R&M (pool, fitness,
+    # rec areas) -> maintenance family, so they split to inter/exte rather than falling to
+    # the G&A catch-all. RedIQ files amenity upkeep in R&M; seen on Tacara & Alta.
+    if re.search(r"maintenance|repairs|r\s*&\s*m|recreational amenit|grounds", s): return "maintenance"
     if re.search(r"manage?ment fee|mgmt fee|manage?ment$", s):                     return "mgmt"
     if re.search(r"tax|insurance", s):                                            return "taxins"
     if re.search(r"contract", s):                                                 return "contract"
@@ -181,6 +184,12 @@ def _split_maintenance(n):
     return "inter/exte"
 
 def _split_taxins(n):
+    # Tax CONSULTANT / protest / appeal / advisory / rendering / valuation fees are
+    # professional services (G&A), NOT the ad valorem tax itself. Leaving them in `ret`
+    # overstates in-place real estate taxes — the line every underwriter scrutinizes for
+    # reassessment. RedIQ files them in GA; validated on Tacara at Weiss Ranch ($23,973).
+    if re.search(r"tax", n) and re.search(r"consult|protest|appeal|advisor|"
+                 r"abatement|render|valuation|agent fee", n):                    return "GA"
     if re.search(r"insurance", n):                                               return "ins"
     if re.search(r"tax", n):                                                     return "ret"
     return "ret"
@@ -306,6 +315,7 @@ EXPENSE_RULES = [
     (r"repair|maintenance|hvac|plumb|electrical|appliance|window|door|screen|flooring|equipment|"
      r"hardware|lighting|key|lock|pool|spa|fountain|janitor|tools|building", "inter/exte"),
     (r"insurance", "ins"),
+    (r"tax\s+(consult|protest|appeal|advis|abatement|render|valuation|agent)", "GA"),
     (r"real estate tax|property tax|^tax|re tax|ad valorem|special assessment", "ret"),
     # non-operating items that sometimes appear without a clear section header
     (r"\binterest\b", "intex"),
@@ -348,6 +358,12 @@ def _override(name):
         if re.search(r"water|sewer", n):                  return "RWS"
         if re.search(r"trash|refuse|garbage", n):         return "RT"
         return "RF"
+    # A "Lease-Up Fee" is a one-time lease-up / marketing cost, NOT a recurring management
+    # fee. Operators file it under the Management Fees section (so it would inflate the
+    # mgmt-fee ratio); RedIQ books it to Marketing/Advertising. Validated on Tacara ($11k).
+    # Resolve before the management-fee rule below since the line names "fee".
+    if re.search(r"lease.?up", n) and re.search(r"\bfee", n):
+        return "adv"
     # Management fee -> mgt regardless of section/spelling ('Managment' typo seen in the
     # wild). Requires 'fee' so 'asset/property management PAYROLL' lines stay payroll.
     if re.search(r"manage?ment fee", n):

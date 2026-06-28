@@ -148,6 +148,30 @@ under 1% — no errors in either direction:
   Supplies (mine `cont` / RedIQ `inter/exte`); Other Recreational Amenities (mine `GA` / RedIQ
   `inter/exte`). All judgment calls between R&M / contract / utilities buckets.
 
+## RedIQ cross-check learnings (Tacara at Weiss Ranch, Jun 2026)
+Validated against the operator's RedIQ export. **EGR / OpEx / NOI tied to the dollar
+($5,114,369 / $3,622,318 / $1,492,051)** and all revenue codes matched except a single
+$1,279 line. Three categorizer fixes came out of it (all previously sent the offending dollars
+to the wrong bucket; all NOI-neutral but they distort scrutinized ratio lines):
+- **Tax CONSULTANT / protest / advisory fees → `GA`, not `ret` (FIXED, $23,973).** "Tax
+  Consultant Fees" sat under the operator's taxes section, so the `tax`→`ret` rule swept it
+  into real-estate taxes — **overstating in-place taxes by $24k**, the line every underwriter
+  re-checks for reassessment. `_split_taxins` (and the keyword fallback) now route
+  tax + consult/protest/appeal/advisor/abatement/render/valuation → `GA`. RedIQ agrees.
+- **"Lease-Up Fees" → `adv`, not `mgt` (FIXED, $11,000).** Operators file a one-time lease-up
+  fee under the **Management Fees** section, so the section→`mgt` route inflated the
+  management-fee ratio. An `_override` now sends `lease-up` + `fee` → `adv` (marketing/lease-up
+  cost) before the management-fee rule. RedIQ books it to Advertising.
+- **"Recreational Amenities" section → R&M `inter/exte`, not the `GA` catch-all (FIXED,
+  $8,349).** The "Recreational Amenities" parent section (Exercise/Weight Room, Other
+  Recreational Amenities) wasn't recognized as a maintenance family, so amenity upkeep fell to
+  the `GA` fallback. `_family_from_section` now maps `recreational amenit|grounds` →
+  maintenance. RedIQ files amenity upkeep in R&M; the same line ("Other Recreational
+  Amenities") also diverged on Alta, so this fixes both.
+- **OPEN — Package Concierge/Locker income → `OI` vs RedIQ `park` ($1,279).** Left as `OI`;
+  a parcel-locker fee is debatably parking/storage income but isn't really parking. Low-dollar,
+  revenue-side, NOI-neutral — a judgment call, not corrected.
+
 ## Detailed vs. summary T12
 A **detailed** T12 has separate GL lines for concessions, loss-to-lease, RUBS fees,
 parking, payroll burden/bonuses, insurance, etc. — the categorizer separates each
