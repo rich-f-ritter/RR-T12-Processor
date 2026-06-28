@@ -34,7 +34,22 @@ netting the confirmed **$40** bundle left a ~$35 residual, i.e. ordinary asking-
 premium (~2%). Built with `--hd-fee-offset 40`. Contrast with Aura: same flag fired on both,
 but the Aura website didn't bundle and Greystar's does — which is exactly why the call is made
 per deal, not by rule. The **"Total Monthly Leasing Price"** phrasing (Greystar and some other
-operators) is the most reliable tell that HD is carrying an all-in number.
+operators) is the most reliable tell that HD *may* be carrying an all-in number — but confirm
+it actually is (next example).
+
+**Worked example — Alta Berry Creek, Georgetown TX (Greystar bundle on the website, but HD
+scraped BASE → do NOT net):** the website shows a **$105.03** flat bundle (Base $1,099 → Total
+Monthly $1,204.03: Internet $55, Trash Doorstep $25, Boiler Mgmt $13.75, Pest $3, Gas/Trash
+admin $3+$3, Stormwater $2.28). It *looks* like a textbook net-it case like The Preserve. But
+checking **HelloData's asking against the KNOWN studio base** ($1,099, straight off the
+website) settles it: HD studio asking ran **~$949–1,099 — at or below base, never near the
+$1,204 total.** So HD here scraped **base rent, not the Total Monthly**, and netting the bundle
+would *understate* HD by ~$100. **Net $0.** The cleanest per-deal test when you have a website
+fee breakdown: pull HD's asking for one floor plan whose base you know and see whether it sits
+at base or at base+bundle. (Lease-up concession noise will swamp aggregate gap math — go
+floor-plan-level against a known base.) NOTE the rent roll *does* carry the bundle as charges
+(trash $25 + boiler $13.75 + pest $3 + a variable `utilreim` ≈ $56.65), but that proves the
+fees exist, NOT that HD picked them up.
 
 ## Why the skill does not auto-detect the fee
 The truth lives on the **property website**, and the data the skill has (rent roll + T12 + HD
