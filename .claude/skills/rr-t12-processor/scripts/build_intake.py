@@ -1295,6 +1295,18 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                         "Dashboard, unit mix, occupancy and reconciliation are EMPTY.")
     elif not mix:
         problems.append("Unit mix is empty (rent roll + HelloData produced no floor-plan rows).")
+    # NOI TIE-OUT: standardized NOI must reconcile to the operator's OWN reported NOI —
+    # re-bucketing lines (incl. the RUBS gross-up) is NOI-neutral, so a material gap means a
+    # categorization/parse BUG (a parent/statistic row summed as a leaf, a sign error, or a
+    # line crossing the NOI boundary), NOT a methodology choice. Surface it loudly.
+    noi_gaps = []
+    for t in getattr(rec, "noi_tie", []) or []:
+        if t.get("rep_noi") is None:
+            continue
+        gap = t["comp_noi"] - t["rep_noi"]
+        if abs(gap) > max(500.0, 0.005 * abs(t["rep_noi"])):
+            noi_gaps.append(f"{t['label']}: standardized ${t['comp_noi']:,.0f} vs operator "
+                            f"reported ${t['rep_noi']:,.0f} (Δ ${gap:,.0f})")
     if problems:
         print("\n".join(["", "=" * 70,
               "⚠  BUILD INCOMPLETE — DO NOT DELIVER THIS WORKBOOK.",
@@ -1303,9 +1315,16 @@ def build(t12_paths, rr_paths, hd_path=None, prop_name=None, out_path=None,
                  "unrecognized T12/rent-roll layout to fix in the parser), then stop.",
                  "=" * 70, ""]), file=sys.stderr)
         print("BUILD_INCOMPLETE: " + " | ".join(problems))
+    elif noi_gaps:
+        print("\n".join(["", "=" * 70,
+              "⚠  NOI DOES NOT TIE to the operator's reported NOI — INVESTIGATE before delivering.",
+              "Re-bucketing is NOI-neutral, so a gap = a categorization/parse bug (parent or",
+              "statistic row summed as a leaf, sign error, or a line crossing the NOI boundary)."]
+              + [f"  - {g}" for g in noi_gaps] + ["=" * 70, ""]), file=sys.stderr)
+        print("BUILD_OK_BUT_NOI_UNTIED: " + " | ".join(noi_gaps))
     else:
         print(f"BUILD_OK: {len(rr.units)} units, {len(mix)} floor plans, "
-              f"{len(st.monthkeys)} months.")
+              f"{len(st.monthkeys)} months. NOI ties to operator.")
     return out_path
 
 

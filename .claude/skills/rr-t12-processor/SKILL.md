@@ -160,8 +160,14 @@ fix before delivering.
 T12 or rent-roll **layout wasn't recognized** (e.g. numeric `MM/YYYY` headers, fused
 `CODE:Name` accounts, a flat "Rent Roll Summary", bare `Type`/`Sq. Feet` columns). The
 build prints a status line you MUST read:
-- **`BUILD_OK: N units, M floor plans, K months.`** → proceed.
+- **`BUILD_OK: … NOI ties to operator.`** → proceed.
 - **`BUILD_INCOMPLETE: …`** (and a banner on stderr) → **DO NOT DELIVER.**
+- **`BUILD_OK_BUT_NOI_UNTIED: …`** → **STOP and investigate.** Standardized NOI must
+  reconcile to the operator's OWN reported NOI — re-bucketing lines (including the RUBS
+  gross-up) is **NOI-neutral**, so a gap is a **categorization/parse bug, never a
+  methodology choice.** Usual causes: a **parent/statistic row** (per-unit rent, occupancy
+  %) summed as a dollar leaf; a **sign error**; or a line that **crossed the NOI boundary**
+  (an operating line routed below NOI, or vice-versa). Fix it so NOI ties, then deliver.
 
 Before presenting the file, confirm ALL of these are non-empty/sane (open the workbook and
 check, don't assume):
@@ -174,7 +180,10 @@ check, don't assume):
    via openpyxl); they populate the instant the file opens in Excel/Sheets. So verify the
    **formulas exist** and trust the **Dashboard's** cached EGR/OpEx/NOI for the numbers —
    do NOT conclude "incomplete" just because openpyxl shows OS Summary blank.
-4. **Reconciliation** — the RR↔T12 ties populated; NOI tie present.
+4. **Reconciliation** — the RR↔T12 ties populated; the **NOI Tie-Out** shows standardized
+   NOI **matching the operator's reported NOI** for each statement (a gap = a bug; see the
+   `BUILD_OK_BUT_NOI_UNTIED` note above). The AGPR line is gross potential (avg contract ×
+   ALL units × 12), not occupied-only.
 
 If **anything** is empty or fails: **do not send the file.** Tell the user plainly **what
 is missing and what you need to finish it** (almost always: an unrecognized input layout to
