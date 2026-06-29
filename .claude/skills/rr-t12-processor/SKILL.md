@@ -89,10 +89,17 @@ HelloData tab appears only when a HelloData CSV is provided):
   multi-period detail lives line-by-line on `T12 Categorized` and in summary on `Lease
   Trend`, so there is no separate "operating history" tab to duplicate it.
 - **Rent Roll (One-Line)** — one row per unit. Core columns A–M match the model's `RR
-  Dump`; then, after **one blank spacer column**, a **per-unit charge-code block** (one
-  column per scheduled charge — Rent, RUBS, amenity, parking, pet, valet trash, etc.,
-  ordered by total $) showing exactly what each unit is billed. The charge block is
-  reference detail, not a model paste target.
+  Dump`; then, after **one blank spacer column**, a **per-unit charge-code block** split into
+  **three labeled, color-coded groups** so it is explicit what rolls into contract rent:
+  (1) **↓ IN Contractual Rent (scheduled $)** — green — base Rent + Amenity Rent, the charges
+  that sum to column I "Contractual Rent"; (2) **↓ Other recurring — Other Income, NOT contract
+  rent (scheduled $)** — parking, tech, valet trash, pet, MTM, etc.; (3) **↓ RUBS / utility
+  recoveries — ACTUAL $** — gold — surfaced from the **Actual Charges** column because RUBS is
+  billed in arrears off metered usage and has **$0 scheduled**, so it is invisible in a
+  scheduled-only view. The skill reads **scheduled** for recurring rent (proration-free) and
+  **actual** only for the RUBS-coded (RWS/RT/RF) recoveries that carry no scheduled value — one-
+  time actual noise (late/termination/referral fees) is deliberately excluded. The charge block
+  is reference detail, not a model paste target.
 - **Lease Trend** — a **monthly** (left-to-right) grid over the **full HelloData + new-lease
   history** (back as far as the data goes; financials populate the overlap):
   **market rent** (HelloData executed asking/effective per unit, mix-weighted; HD concession

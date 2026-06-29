@@ -412,6 +412,7 @@ class RRUnit:
     lease_start: object = None
     lease_end: object = None
     expected_move_out: object = None
+    actual_charges: dict = field(default_factory=dict)  # charge_code -> ACTUAL $ (summed, nets reversals)
 
     # derived
     contract_rent: float = 0.0
@@ -565,6 +566,14 @@ def parse_rent_roll(path: str, charge_lookup=None) -> RentRoll:
             sched = _num(ws.cell(r, c_sched).value) if c_sched else 0.0
             nm = _resolve_charge(cc)
             unit.charges[nm] = unit.charges.get(nm, 0.0) + sched
+            # Also accumulate the ACTUAL charge (when the roll exposes a separate Actual
+            # column). Summing actual transactions per (unit, charge) nets reversals/
+            # proration corrections. This is the ONLY place RUBS-style recoveries show up:
+            # they are billed in arrears off metered usage, so their Scheduled value is $0
+            # and they are invisible unless read from Actual.
+            if c_actual and c_actual != c_sched:
+                act = _num(ws.cell(r, c_actual).value)
+                unit.actual_charges[nm] = unit.actual_charges.get(nm, 0.0) + act
 
     data_start = hdr_row + (2 if two_row else 1)
 
@@ -1248,9 +1257,24 @@ def reconcile(t12: T12, rr: RentRoll) -> Reconciliation:
     for u in rr.units:
         for cc, amt in u.charges.items():
             cc_totals[cc] = cc_totals.get(cc, 0.0) + amt
+    # RUBS / utility recoveries carry $0 scheduled (billed in arrears off metered usage),
+    # so they are invisible in the scheduled totals. Fold in their ACTUAL amount keyed by a
+    # RUBS code (RWS/RT/RF) with ~0 scheduled, so the charge map shows the real recovery.
+    act_totals = {}
+    for u in rr.units:
+        for cc, amt in u.actual_charges.items():
+            act_totals[cc] = act_totals.get(cc, 0.0) + amt
+    rubs_actual_only = set()
+    for cc, a in act_totals.items():
+        code, _ic, _rec = am.categorize_charge(cc)
+        if code in ("RWS", "RT", "RF") and abs(cc_totals.get(cc, 0.0)) < 1.0 and a > 0.005:
+            cc_totals[cc] = a
+            rubs_actual_only.add(cc)
     for cc, amt in sorted(cc_totals.items(), key=lambda kv: -abs(kv[1])):
         code, is_contract, _rec = am.categorize_charge(cc)
         ytype = rr.charge_summary.get(cc, (None, ""))[1]
+        if cc in rubs_actual_only:
+            ytype = (ytype + " · ACTUAL (no sched)").strip(" ·")
         charge_map.append((cc, code, ytype, amt, is_contract))
 
     mkt_note = ("RR Market column \u2194 T12 GPR \u2014 both are seller-set ASKING rents and are "

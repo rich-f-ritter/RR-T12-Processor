@@ -188,6 +188,27 @@ charges). Everything else — parking, RUBS, pet, technology, late fees, applica
 admin, insurance/renters-liability — is recurring or one-time **Other Income** and is
 flagged accordingly in the `Reconciliation` tab's "In Contract Rent?" column.
 
+### Scheduled vs. Actual charges, and why RUBS needs Actual (Canyon Ridge, Jun 2026)
+Transaction-level rolls (Yardi) expose **both** a `Scheduled Charges` and an `Actual Charges`
+column. The skill reads **Scheduled** for recurring charges — it is the clean full-month
+recurring amount, free of mid-month **proration** and one-off reversals (on CR, scheduled Rent
+$562,043 vs actual $553,970; the actual is depressed by partial-month move-ins and
+concessions). **But RUBS / utility recoveries carry $0 scheduled** — they are billed **in
+arrears off metered usage**, posted each month as an **actual** charge only. A scheduled-only
+read therefore shows **no RUBS at all** (on CR, scheduled RUBS = $0 while actual = $14,409/mo).
+- The parser now captures `actual_charges` per unit (summed, which nets the ±reversals), and
+  the one-line tab surfaces a dedicated **RUBS recoveries — ACTUAL $** group for charges that
+  map to a RUBS code (`RWS`/`RT`/`RF`) with ~$0 scheduled. One-time actual noise (late,
+  termination, referral, application fees) is deliberately **not** surfaced.
+- The Reconciliation **charge map** folds the actual RUBS amount in (tagged "ACTUAL (no
+  sched)") so the recovery is visible there too; the T12-side **Utility recapture (RUBS)** tie
+  was always T12-based and is unaffected.
+- **Underwriting watch-out — RUBS ramps.** On CR the T12 RUBS income climbed from ~$2.7k/mo
+  (Apr-2025) to ~$17k/mo (May-2026) — a RUBS rollout layered on an occupancy ramp. The T12
+  *average* (~$8.5k/mo) badly understates the in-place recovery; the rent roll's current
+  ~$14.4k/mo matches the recent **run-rate**, not the average. Underwrite RUBS to the current
+  run-rate when it is ramping, not the trailing-12 mean.
+
 ## Validation against RedIQ (Canyon Ridge)
 - Per-line codes on the **detailed** T12 vs RedIQ's own line-level mapping: **96/97**
   (the single difference is the Late-Fees call above).

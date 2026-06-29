@@ -332,33 +332,63 @@ def write_rent_roll(ws, rr: il.RentRoll, hd):
     for c, h in enumerate(RR_HEADERS, 1):
         _set(ws, 1, c, h, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
              align="center", wrap=True)
-    # charge-code columns: union of charges with a non-zero total, ordered by magnitude.
+    # charge-code columns, GROUPED so it is explicit which charges roll into contract rent.
     # one blank spacer column between the core fields (A-M) and the charge block.
     ncore = len(RR_HEADERS)                       # 13 -> A..M
-    cc_tot = {}
+    sched_tot, act_tot = {}, {}
     for u in rr.units:
         for cc, amt in u.charges.items():
-            cc_tot[cc] = cc_tot.get(cc, 0.0) + (amt or 0.0)
-    charge_codes = [cc for cc, t in sorted(cc_tot.items(), key=lambda kv: -abs(kv[1])) if abs(t) > 0.005]
+            sched_tot[cc] = sched_tot.get(cc, 0.0) + (amt or 0.0)
+        for cc, amt in u.actual_charges.items():
+            act_tot[cc] = act_tot.get(cc, 0.0) + (amt or 0.0)
+    by_mag = lambda d: [cc for cc, t in sorted(d.items(), key=lambda kv: -abs(kv[1])) if abs(t) > 0.005]
+    sched_codes = by_mag(sched_tot)
+    # Partition the SCHEDULED charges into contract-rent vs other-income.
+    contract_cc, other_cc = [], []
+    for cc in sched_codes:
+        _code, is_cr, _rec = am.categorize_charge(cc)
+        (contract_cc if is_cr else other_cc).append(cc)
+    # RUBS / utility recoveries are billed in arrears off metered usage, so they carry $0
+    # scheduled and only appear in ACTUAL charges. Surface them (and only them — not the
+    # one-time actual noise like late/termination/referral fees) from actuals, keyed by a
+    # RUBS code (RWS/RT/RF) with ~0 scheduled.
+    RUBS = {"RWS", "RT", "RF"}
+    rubs_cc = []
+    for cc in by_mag(act_tot):
+        code, _is_cr, _rec = am.categorize_charge(cc)
+        if code in RUBS and abs(sched_tot.get(cc, 0.0)) < 1.0 and act_tot.get(cc, 0.0) > 0.005:
+            rubs_cc.append(cc)
+
+    # groups: (banner, banner_fill, subhdr_fill, charge-list, source-dict-attr)
+    groups = []
+    if contract_cc:
+        groups.append(("↓ IN Contractual Rent  (scheduled $)", "548235", "C6E0B4", contract_cc, "charges"))
+    if other_cc:
+        groups.append(("↓ Other recurring — Other Income, NOT in contract rent  (scheduled $)",
+                       SECT_FILL, "D9E1F2", other_cc, "charges"))
+    if rubs_cc:
+        groups.append(("↓ RUBS / utility recoveries — ACTUAL $  ($0 scheduled; billed in arrears)",
+                       "C9A227", "FFE699", rubs_cc, "actual_charges"))
+
+    all_cols = [(cc, attr, sub) for (_b, _bf, sub, lst, attr) in groups for cc in lst]
+    has_block = bool(all_cols)
     spacer = ncore + 1                            # N (blank)
     cstart = ncore + 2                            # O -> first charge column
-    if charge_codes:
-        # group label over the charge block (spacer column N is left empty)
-        _set(ws, 1, cstart, "Scheduled Charges by Code (monthly $)", font=_f(bold=True, color=WHITE),
-             fill=_fill(SECT_FILL))
-        for j, cc in enumerate(charge_codes):
-            _set(ws, 2, cstart + j, cc, font=_f(bold=True, color=WHITE), fill=_fill(HDR_FILL),
+    if has_block:
+        col = cstart
+        for banner, bfill, _sub, lst, _attr in groups:
+            _set(ws, 1, col, banner, font=_f(bold=True, color=WHITE), fill=_fill(bfill))
+            if len(lst) > 1:
+                ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + len(lst) - 1)
+            col += len(lst)
+        for j, (cc, _attr, sub) in enumerate(all_cols):
+            _set(ws, 2, cstart + j, cc, font=_f(bold=True, color=NAVY), fill=_fill(sub),
                  align="center", wrap=True)
 
-    data_start = 3 if charge_codes else 2
-    # if no charge block, headers sit on row 1 and data on row 2 (original layout)
-    hdr_row = 1
-    if charge_codes:
-        # re-place core headers on row 2 as well so the charge sub-header row aligns;
-        # keep row-1 core headers but merge each down two rows for a clean look
+    data_start = 3 if has_block else 2
+    if has_block:
         for c in range(1, ncore + 1):
             ws.merge_cells(start_row=1, start_column=c, end_row=2, end_column=c)
-        ws.merge_cells(start_row=1, start_column=cstart, end_row=1, end_column=cstart + len(charge_codes) - 1)
 
     r = data_start
     for u in rr.units:
@@ -381,8 +411,8 @@ def write_rent_roll(ws, rr: il.RentRoll, hd):
             elif c in (1, 2, 6, 7):
                 al = "left" if c in (1, 2) else "center"
             _set(ws, r, c, v, font=_f(), fmt=fmt, align=al, fill=zeb)
-        for j, cc in enumerate(charge_codes):
-            amt = u.charges.get(cc)
+        for j, (cc, attr, _sub) in enumerate(all_cols):
+            amt = getattr(u, attr).get(cc)
             _set(ws, r, cstart + j, (amt if amt not in (None, 0) else None),
                  font=_f(), fmt=MONEY, align="right", fill=zeb)
         r += 1
@@ -393,19 +423,26 @@ def write_rent_roll(ws, rr: il.RentRoll, hd):
     _set(ws, last + 1, 8, f"=SUM(H{data_start}:H{last})", font=_f(bold=True, color=NAVY), fmt=MONEY, align="right")
     _set(ws, last + 1, 9, f"=SUM(I{data_start}:I{last})", font=_f(bold=True, color=NAVY), fmt=MONEY, align="right")
     _set(ws, last + 1, 10, f"=SUM(J{data_start}:J{last})", font=_f(bold=True, color=NAVY), fmt=MONEY, align="right")
-    for j, cc in enumerate(charge_codes):
+    for j in range(len(all_cols)):
         L = get_column_letter(cstart + j)
         _set(ws, last + 1, cstart + j, f"=SUM({L}{data_start}:{L}{last})",
              font=_f(bold=True, color=NAVY), fmt=MONEY, align="right")
-    for c in range(1, cstart + len(charge_codes)):
+    for c in range(1, cstart + len(all_cols)):
         ws.cell(last + 1, c).border = DBLTOP
+
+    # contract-rent reconciliation note under the totals
+    if has_block:
+        note = ("Contractual Rent (col I) = the green charges above — base Rent + Amenity Rent "
+                "(scheduled). Other Income & RUBS recoveries are NOT in contract rent. RUBS is "
+                "shown from ACTUAL charges because it has no scheduled value (billed in arrears).")
+        _set(ws, last + 3, 1, note, font=_f(italic=True, color=GREY, size=9))
 
     widths = [11, 11, 9, 6, 6, 12, 16, 13, 14, 14, 14, 14, 14]
     for c, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(c)].width = w
-    if charge_codes:
+    if has_block:
         ws.column_dimensions[get_column_letter(spacer)].width = 2
-        for j in range(len(charge_codes)):
+        for j in range(len(all_cols)):
             ws.column_dimensions[get_column_letter(cstart + j)].width = 13
     ws.freeze_panes = "B" + str(data_start)
     ws.sheet_view.showGridLines = False
